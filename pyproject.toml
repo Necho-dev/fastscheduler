@@ -17,16 +17,12 @@ classifiers = [
     "Topic :: Software Development :: Libraries :: Python Modules",
     "Topic :: System :: Systems Administration",
 ]
-dependencies = [
-    "fastapi[standard]>=0.100.0",
-]
+dependencies = ["fastapi[standard]>=0.100.0"]
 
 
 [project.urls]
-Homepage = "https://github.com/yourusername/fastscheduler"
-Documentation = "https://github.com/yourusername/fastscheduler#readme"
-Repository = "https://github.com/yourusername/fastscheduler"
-Issues = "https://github.com/yourusername/fastscheduler/issues"
+Repository = "https://github.com/MichielMe/fastscheduler"
+
 
 [build-system]
 requires = ["hatchling"]
