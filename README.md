@@ -2,6 +2,11 @@
 
 Simple, lightweight task scheduler for Python with async support.
 
+If this saves you time, ⭐️ the repo and open an issue for ideas — I’m actively improving it.
+
+[![GitHub Stars](https://img.shields.io/github/stars/MichielMe/fastscheduler?style=social)](https://github.com/MichielMe/fastscheduler)
+[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+
 ## Features
 
 - Simple decorator-based API

@@ -57,3 +57,4 @@ uv run pytest tests/ --cov=fastscheduler --cov-report=html
 - Some tests include sleep() calls to allow jobs to execute
 - All schedulers are cleaned up after tests (stopped properly)
 
+
