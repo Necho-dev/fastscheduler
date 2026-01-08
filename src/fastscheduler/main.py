@@ -1,5 +1,6 @@
 import asyncio
 import heapq
+import itertools
 import json
 import logging
 import re
@@ -12,15 +13,11 @@ from dataclasses import asdict, dataclass, field
 from datetime import datetime, timedelta
 from enum import Enum
 from pathlib import Path
-from typing import Callable, Dict, List, Optional, Union
+from typing import Callable, Dict, Iterator, List, Optional, Union
 
-# Set up logging
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - FastScheduler - %(message)s",
-    datefmt="%H:%M:%S",
-)
-logger = logging.getLogger("FastScheduler")
+# Set up logger without configuring global logging (let the application configure handlers)
+logger = logging.getLogger("fastscheduler")
+logger.addHandler(logging.NullHandler())
 
 
 class JobStatus(Enum):
@@ -135,7 +132,8 @@ class FastScheduler:
         self.running = False
         self.thread: Optional[threading.Thread] = None
         self.lock = threading.RLock()  # Use RLock for re-entrant locking
-        self._job_counter = 0
+        self._job_counter: Iterator[int] = itertools.count()
+        self._job_counter_value = 0  # Track last value for persistence
         self.history: List[JobHistory] = []
         self.max_history = 10000
         self.quiet = quiet  # Quiet mode for less verbose output
@@ -206,6 +204,11 @@ class FastScheduler:
     def _register_function(self, func: Callable):
         """Register a function for persistence"""
         self.job_registry[f"{func.__module__}.{func.__name__}"] = func
+
+    def _next_job_id(self) -> str:
+        """Generate next job ID (thread-safe)"""
+        self._job_counter_value = next(self._job_counter)
+        return f"job_{self._job_counter_value}"
 
     def _add_job(self, job: Job):
         """Add job to the priority queue"""
@@ -428,14 +431,8 @@ class FastScheduler:
         try:
             # Check if function is async
             if asyncio.iscoroutinefunction(job.func):
-                # Run async function
-                try:
-                    loop = asyncio.get_event_loop()
-                except RuntimeError:
-                    loop = asyncio.new_event_loop()
-                    asyncio.set_event_loop(loop)
-
-                loop.run_until_complete(job.func(*job.args, **job.kwargs))
+                # Run async function in a new event loop (thread-safe)
+                asyncio.run(job.func(*job.args, **job.kwargs))
             else:
                 # Run sync function
                 job.func(*job.args, **job.kwargs)
@@ -538,7 +535,7 @@ class FastScheduler:
                 "jobs": [job.to_dict() for job in self.jobs],
                 "history": [h.to_dict() for h in self.history[-1000:]],
                 "statistics": self.stats,
-                "_job_counter": self._job_counter,
+                "_job_counter": self._job_counter_value,
             }
 
             temp_file = self.state_file.with_suffix(".tmp")
@@ -560,7 +557,8 @@ class FastScheduler:
             with open(self.state_file, "r") as f:
                 state = json.load(f)
 
-            self._job_counter = state.get("_job_counter", 0)
+            self._job_counter_value = state.get("_job_counter", 0)
+            self._job_counter = itertools.count(self._job_counter_value)
 
             self.history = [
                 JobHistory(**{k: v for k, v in h.items() if k != "timestamp_readable"})
@@ -771,7 +769,7 @@ class IntervalScheduler:
             func_name=func.__name__,
             func_module=func.__module__,
             interval=self.interval,
-            job_id=f"job_{self.scheduler._job_counter}",
+            job_id=self.scheduler._next_job_id(),
             args=args,
             kwargs=kwargs,
             repeat=True,
@@ -779,7 +777,6 @@ class IntervalScheduler:
             catch_up=self._catch_up,
             schedule_type="interval",
         )
-        self.scheduler._job_counter += 1
         self.scheduler._add_job(job)
         return func
 
@@ -823,13 +820,12 @@ class DailyAtScheduler:
             func=func,
             func_name=func.__name__,
             func_module=func.__module__,
-            job_id=f"job_{self.scheduler._job_counter}",
+            job_id=self.scheduler._next_job_id(),
             repeat=True,
             max_retries=self._max_retries,
             schedule_type="daily",
             schedule_time=self.time_str,
         )
-        self.scheduler._job_counter += 1
         self.scheduler._add_job(job)
         return func
 
@@ -938,14 +934,13 @@ class WeeklyAtScheduler:
             func=func,
             func_name=func.__name__,
             func_module=func.__module__,
-            job_id=f"job_{self.scheduler._job_counter}",
+            job_id=self.scheduler._next_job_id(),
             repeat=True,
             max_retries=self._max_retries,
             schedule_type="weekly",
             schedule_time=self.time_str,
             schedule_days=self.days,
         )
-        self.scheduler._job_counter += 1
         self.scheduler._add_job(job)
         return func
 
@@ -986,14 +981,13 @@ class HourlyAtScheduler:
             func=func,
             func_name=func.__name__,
             func_module=func.__module__,
-            job_id=f"job_{self.scheduler._job_counter}",
+            job_id=self.scheduler._next_job_id(),
             interval=3600,
             repeat=True,
             max_retries=self._max_retries,
             schedule_type="hourly",
             schedule_time=self.minute_str,
         )
-        self.scheduler._job_counter += 1
         self.scheduler._add_job(job)
         return func
 
@@ -1031,13 +1025,12 @@ class OnceScheduler:
             func=func,
             func_name=func.__name__,
             func_module=func.__module__,
-            job_id=f"job_{self.scheduler._job_counter}",
+            job_id=self.scheduler._next_job_id(),
             args=args,
             kwargs=kwargs,
             repeat=False,
             max_retries=self._max_retries,
         )
-        self.scheduler._job_counter += 1
         self.scheduler._add_job(job)
 
         if self._decorator_mode:
