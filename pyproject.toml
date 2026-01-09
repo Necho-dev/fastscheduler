@@ -1,6 +1,6 @@
 [project]
 name = "fastscheduler"
-version = "0.1.0"
+version = "0.1.1"
 description = "Simple, lightweight task scheduler for Python with async support"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -39,10 +39,12 @@ build-backend = "hatchling.build"
 packages = ["src/fastscheduler"]
 
 [tool.hatch.build]
-include = [
-    "src/fastscheduler/**/*.py",
-    "src/fastscheduler/templates/**/*.html",
-]
+include = ["src/fastscheduler/**/*.py", "src/fastscheduler/templates/**/*.html"]
 
 [dependency-groups]
-dev = ["pytest>=8.4.2", "ruff>=0.14.4", "fastapi[standard]>=0.100.0", "croniter>=2.0.0"]
+dev = [
+    "pytest>=8.4.2",
+    "ruff>=0.14.4",
+    "fastapi[standard]>=0.100.0",
+    "croniter>=2.0.0",
+]
