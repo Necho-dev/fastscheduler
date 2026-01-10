@@ -1113,3 +1113,182 @@ class TestConfigurableConstants:
         assert "old_func" in func_names
 
         sched.stop()
+
+
+class TestDeadLetterQueue:
+    """Tests for dead letter queue functionality"""
+
+    def test_default_max_dead_letters(self, temp_state_file):
+        """Test default max_dead_letters value"""
+        sched = FastScheduler(state_file=str(temp_state_file), quiet=True)
+        assert sched.max_dead_letters == 500
+        sched.stop()
+
+    def test_custom_max_dead_letters(self, temp_state_file):
+        """Test custom max_dead_letters value"""
+        sched = FastScheduler(
+            state_file=str(temp_state_file),
+            quiet=True,
+            max_dead_letters=100,
+        )
+        assert sched.max_dead_letters == 100
+        sched.stop()
+
+    def test_dead_letter_file_path(self, temp_state_file):
+        """Test dead letter file path is derived from state file"""
+        sched = FastScheduler(state_file=str(temp_state_file), quiet=True)
+        expected = str(temp_state_file).replace(".json", "_dead_letters.json")
+        assert str(sched._dead_letters_file) == expected
+        sched.stop()
+
+    def test_dead_letter_queue_adds_failed_jobs(self, temp_state_file):
+        """Test that failures are added to dead letter queue"""
+        from fastscheduler.main import JobStatus
+
+        sched = FastScheduler(state_file=str(temp_state_file), quiet=True)
+
+        # Log a final failure (with "Max retries:" prefix)
+        sched._log_history(
+            job_id="job_1",
+            func_name="failing_job",
+            status=JobStatus.FAILED,
+            error="Max retries: Some error",
+        )
+
+        assert len(sched.dead_letters) == 1
+        assert sched.dead_letters[0].func_name == "failing_job"
+        assert "Max retries" in sched.dead_letters[0].error
+        sched.stop()
+
+    def test_dead_letter_queue_adds_retry_failures(self, temp_state_file):
+        """Test that retry failures are also added to dead letter queue"""
+        from fastscheduler.main import JobStatus
+
+        sched = FastScheduler(state_file=str(temp_state_file), quiet=True)
+
+        # Log a retry failure
+        sched._log_history(
+            job_id="job_1",
+            func_name="failing_job",
+            status=JobStatus.FAILED,
+            error="Retry 1/3: Some error",
+        )
+
+        # All failures with errors go to dead letter queue
+        assert len(sched.dead_letters) == 1
+        assert sched.dead_letters[0].func_name == "failing_job"
+        sched.stop()
+
+    def test_dead_letter_queue_ignores_non_error_failures(self, temp_state_file):
+        """Test that failures without error messages are not added to dead letter queue"""
+        from fastscheduler.main import JobStatus
+
+        sched = FastScheduler(state_file=str(temp_state_file), quiet=True)
+
+        # Log a failure without error message
+        sched._log_history(
+            job_id="job_1",
+            func_name="failing_job",
+            status=JobStatus.FAILED,
+            error=None,
+        )
+
+        assert len(sched.dead_letters) == 0
+        sched.stop()
+
+    def test_dead_letter_queue_respects_max_limit(self, temp_state_file):
+        """Test that dead letter queue respects max limit"""
+        from fastscheduler.main import JobStatus
+
+        sched = FastScheduler(
+            state_file=str(temp_state_file),
+            quiet=True,
+            max_dead_letters=5,
+        )
+
+        # Add more than max entries
+        for i in range(10):
+            sched._log_history(
+                job_id=f"job_{i}",
+                func_name=f"failing_job_{i}",
+                status=JobStatus.FAILED,
+                error=f"Max retries: Error {i}",
+            )
+
+        assert len(sched.dead_letters) == 5
+        # Should keep the last 5
+        func_names = [dl.func_name for dl in sched.dead_letters]
+        assert "failing_job_5" in func_names
+        assert "failing_job_9" in func_names
+        assert "failing_job_0" not in func_names
+        sched.stop()
+
+    def test_get_dead_letters(self, temp_state_file):
+        """Test get_dead_letters returns dict format"""
+        from fastscheduler.main import JobStatus
+
+        sched = FastScheduler(state_file=str(temp_state_file), quiet=True)
+
+        sched._log_history(
+            job_id="job_1",
+            func_name="failing_job",
+            status=JobStatus.FAILED,
+            error="Max retries: Error",
+            execution_time=1.5,
+        )
+
+        dead_letters = sched.get_dead_letters()
+        assert len(dead_letters) == 1
+        assert dead_letters[0]["func_name"] == "failing_job"
+        assert dead_letters[0]["error"] == "Max retries: Error"
+        assert "timestamp_readable" in dead_letters[0]
+        sched.stop()
+
+    def test_clear_dead_letters(self, temp_state_file):
+        """Test clearing dead letter queue"""
+        from fastscheduler.main import JobStatus
+
+        sched = FastScheduler(state_file=str(temp_state_file), quiet=True)
+
+        # Add some entries
+        for i in range(3):
+            sched._log_history(
+                job_id=f"job_{i}",
+                func_name=f"failing_job_{i}",
+                status=JobStatus.FAILED,
+                error=f"Max retries: Error {i}",
+            )
+
+        assert len(sched.dead_letters) == 3
+
+        # Clear them
+        count = sched.clear_dead_letters()
+        assert count == 3
+        assert len(sched.dead_letters) == 0
+        sched.stop()
+
+    def test_dead_letters_persist_and_load(self, temp_state_file):
+        """Test that dead letters are persisted and loaded"""
+        import time as time_module
+
+        from fastscheduler.main import JobStatus
+
+        # Create scheduler and add dead letters
+        sched1 = FastScheduler(state_file=str(temp_state_file), quiet=True)
+        sched1._log_history(
+            job_id="job_1",
+            func_name="failing_job",
+            status=JobStatus.FAILED,
+            error="Max retries: Error",
+        )
+        sched1._save_dead_letters()  # Force sync save
+        sched1.stop()
+
+        # Give file system time to write
+        time_module.sleep(0.1)
+
+        # Create new scheduler and verify dead letters loaded
+        sched2 = FastScheduler(state_file=str(temp_state_file), quiet=True)
+        assert len(sched2.dead_letters) == 1
+        assert sched2.dead_letters[0].func_name == "failing_job"
+        sched2.stop()

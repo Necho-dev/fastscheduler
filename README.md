@@ -8,6 +8,8 @@ If this saves you time, ⭐️ the repo and open an issue for ideas — I'm acti
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 
+![FastScheduler Demo](docs/images/fastscheduler.gif)
+
 ## Features
 
 - 🎯 **Simple decorator-based API** - Schedule tasks in one line
@@ -19,6 +21,7 @@ If this saves you time, ⭐️ the repo and open an issue for ideas — I'm acti
 - 🔄 **Automatic retries** - Configurable retry with exponential backoff
 - ⏱️ **Job timeouts** - Kill long-running jobs automatically
 - ⏸️ **Pause/Resume** - Control jobs without removing them
+- 📋 **Dead Letter Queue** - Track and debug failed jobs
 
 ## Installation
 
@@ -208,27 +211,31 @@ scheduler.start()
 
 Access at `http://localhost:8000/scheduler/`
 
+![FastScheduler Dashboard](docs/images/dashboard.png)
+
 - **Real-time updates** via Server-Sent Events (SSE)
-- **Job cards** with status indicators and countdown timers
+- **Job table** with status indicators, last 5 run results, and countdown timers
 - **Quick actions** - Pause/Resume/Cancel directly from the UI
-- **Execution history** with error logs
-- **Statistics** - Success rate, uptime, jobs per hour
-- **Filter & search** - Find jobs by status or name
+- **Execution history** tab with filtering and search
+- **Dead letter queue** tab - view failed jobs with error details
+- **Statistics** - Success rate, uptime, active jobs count
 - **Toast notifications** - Alerts for job completions and failures
 
 ### API Endpoints
 
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/scheduler/` | GET | Dashboard UI |
-| `/scheduler/api/status` | GET | Scheduler status |
-| `/scheduler/api/jobs` | GET | List all jobs |
-| `/scheduler/api/jobs/{job_id}` | GET | Get specific job |
-| `/scheduler/api/jobs/{job_id}/pause` | POST | Pause a job |
-| `/scheduler/api/jobs/{job_id}/resume` | POST | Resume a job |
-| `/scheduler/api/jobs/{job_id}/cancel` | POST | Cancel a job |
-| `/scheduler/api/history` | GET | Execution history |
-| `/scheduler/events` | GET | SSE event stream |
+| Endpoint                              | Method | Description                     |
+| ------------------------------------- | ------ | ------------------------------- |
+| `/scheduler/`                         | GET    | Dashboard UI                    |
+| `/scheduler/api/status`               | GET    | Scheduler status                |
+| `/scheduler/api/jobs`                 | GET    | List all jobs                   |
+| `/scheduler/api/jobs/{job_id}`        | GET    | Get specific job                |
+| `/scheduler/api/jobs/{job_id}/pause`  | POST   | Pause a job                     |
+| `/scheduler/api/jobs/{job_id}/resume` | POST   | Resume a job                    |
+| `/scheduler/api/jobs/{job_id}/cancel` | POST   | Cancel a job                    |
+| `/scheduler/api/history`              | GET    | Execution history               |
+| `/scheduler/api/dead-letters`         | GET    | Dead letter queue (failed jobs) |
+| `/scheduler/api/dead-letters`         | DELETE | Clear dead letter queue         |
+| `/scheduler/events`                   | GET    | SSE event stream                |
 
 ## Configuration
 
@@ -240,16 +247,37 @@ scheduler = FastScheduler(
     max_history=5000,               # Max history entries to keep (default: 10000)
     max_workers=20,                 # Concurrent job threads (default: 10)
     history_retention_days=8,       # Delete history older than X days (default: 7)
+    max_dead_letters=500,           # Max failed jobs in dead letter queue (default: 500)
 )
 ```
 
 ### History Retention
 
 History is automatically cleaned up based on two limits (both are enforced):
+
 - **Count limit**: `max_history` - maximum number of entries
 - **Time limit**: `history_retention_days` - maximum age in days
 
 Set `history_retention_days=0` to disable time-based cleanup (only count limit applies).
+
+### Dead Letter Queue
+
+Failed job executions are automatically stored in a separate dead letter queue for debugging:
+
+```python
+# Get failed jobs
+dead_letters = scheduler.get_dead_letters(limit=100)
+
+# Clear the queue
+scheduler.clear_dead_letters()
+```
+
+The dead letter queue:
+
+- Stores the last `max_dead_letters` failed jobs (default: 500)
+- Persists to a separate JSON file (`*_dead_letters.json`)
+- Includes error messages, timestamps, run counts, and execution times
+- Viewable in the dashboard "Failed" tab
 
 ## Monitoring
 
@@ -281,7 +309,7 @@ with FastScheduler(quiet=True) as scheduler:
     @scheduler.every(5).seconds
     def task():
         print("Running")
-    
+
     # Scheduler starts automatically
     time.sleep(30)
 # Scheduler stops automatically on exit
@@ -297,6 +325,7 @@ FastScheduler automatically saves state to disk:
 - Job counter (ensures unique IDs across restarts)
 
 On restart, it:
+
 1. Restores all jobs
 2. Calculates missed executions
 3. Runs catch-up jobs (unless `no_catch_up()` is set)
@@ -373,41 +402,43 @@ def background_job():
 
 ### FastScheduler
 
-| Method | Description |
-|--------|-------------|
-| `start()` | Start the scheduler |
-| `stop(wait=True, timeout=30)` | Stop gracefully |
-| `get_jobs()` | List all scheduled jobs |
-| `get_job(job_id)` | Get specific job by ID |
-| `get_history(func_name=None, limit=50)` | Get execution history |
-| `get_statistics()` | Get runtime statistics |
-| `pause_job(job_id)` | Pause a job |
-| `resume_job(job_id)` | Resume a paused job |
-| `cancel_job(job_id)` | Cancel and remove a job |
-| `cancel_job_by_name(func_name)` | Cancel all jobs by function name |
-| `print_status()` | Print status to console |
+| Method                                  | Description                         |
+| --------------------------------------- | ----------------------------------- |
+| `start()`                               | Start the scheduler                 |
+| `stop(wait=True, timeout=30)`           | Stop gracefully                     |
+| `get_jobs()`                            | List all scheduled jobs             |
+| `get_job(job_id)`                       | Get specific job by ID              |
+| `get_history(func_name=None, limit=50)` | Get execution history               |
+| `get_statistics()`                      | Get runtime statistics              |
+| `get_dead_letters(limit=100)`           | Get dead letter queue (failed jobs) |
+| `clear_dead_letters()`                  | Clear all dead letter entries       |
+| `pause_job(job_id)`                     | Pause a job                         |
+| `resume_job(job_id)`                    | Resume a paused job                 |
+| `cancel_job(job_id)`                    | Cancel and remove a job             |
+| `cancel_job_by_name(func_name)`         | Cancel all jobs by function name    |
+| `print_status()`                        | Print status to console             |
 
 ### Scheduler Methods
 
-| Method | Description |
-|--------|-------------|
-| `every(n).seconds/minutes/hours/days` | Interval scheduling |
-| `daily.at("HH:MM")` | Daily at specific time |
-| `hourly.at(":MM")` | Hourly at specific minute |
-| `weekly.monday/tuesday/.../sunday.at("HH:MM")` | Weekly scheduling |
-| `weekly.weekdays/weekends.at("HH:MM")` | Weekday/weekend scheduling |
-| `cron("expression")` | Cron expression scheduling |
-| `once(seconds)` | One-time delayed execution |
-| `at("YYYY-MM-DD HH:MM:SS")` | One-time at specific datetime |
+| Method                                         | Description                   |
+| ---------------------------------------------- | ----------------------------- |
+| `every(n).seconds/minutes/hours/days`          | Interval scheduling           |
+| `daily.at("HH:MM")`                            | Daily at specific time        |
+| `hourly.at(":MM")`                             | Hourly at specific minute     |
+| `weekly.monday/tuesday/.../sunday.at("HH:MM")` | Weekly scheduling             |
+| `weekly.weekdays/weekends.at("HH:MM")`         | Weekday/weekend scheduling    |
+| `cron("expression")`                           | Cron expression scheduling    |
+| `once(seconds)`                                | One-time delayed execution    |
+| `at("YYYY-MM-DD HH:MM:SS")`                    | One-time at specific datetime |
 
 ### Chainable Modifiers
 
-| Modifier | Description |
-|----------|-------------|
-| `.timeout(seconds)` | Maximum execution time |
-| `.retries(n)` | Maximum retry attempts |
-| `.no_catch_up()` | Skip missed executions |
-| `.tz("timezone")` | Set timezone for schedule |
+| Modifier            | Description               |
+| ------------------- | ------------------------- |
+| `.timeout(seconds)` | Maximum execution time    |
+| `.retries(n)`       | Maximum retry attempts    |
+| `.no_catch_up()`    | Skip missed executions    |
+| `.tz("timezone")`   | Set timezone for schedule |
 
 ## License
 

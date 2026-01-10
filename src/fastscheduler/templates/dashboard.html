@@ -1,12 +1,15 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <title>FastScheduler</title>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Outfit:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link
+        href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Outfit:wght@400;500;600;700&display=swap"
+        rel="stylesheet">
     <style>
         :root {
             --bg-primary: #09090b;
@@ -37,9 +40,7 @@
             --radius-lg: 14px;
             --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
             --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.5);
-            --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.6);
             --transition-fast: 150ms cubic-bezier(0.4, 0, 0.2, 1);
-            --transition-normal: 250ms cubic-bezier(0.4, 0, 0.2, 1);
         }
 
         * {
@@ -57,7 +58,7 @@
             -webkit-font-smoothing: antialiased;
         }
 
-        /* Top Navbar */
+        /* Navbar */
         .navbar {
             position: sticky;
             top: 0;
@@ -65,74 +66,93 @@
             background: var(--bg-secondary);
             border-bottom: 1px solid var(--border-subtle);
             padding: 0 32px;
-            height: 64px;
+            height: 56px;
             display: flex;
             align-items: center;
             justify-content: space-between;
-            backdrop-filter: blur(12px);
         }
 
         .navbar-left {
             display: flex;
             align-items: center;
-            gap: 24px;
+            gap: 20px;
         }
 
         .logo {
             display: flex;
             align-items: center;
             gap: 10px;
+            font-weight: 700;
+            font-size: 16px;
         }
 
         .logo-icon {
-            width: 32px;
-            height: 32px;
+            width: 28px;
+            height: 28px;
             background: linear-gradient(135deg, var(--accent-primary), var(--accent-secondary));
             border-radius: var(--radius-sm);
             display: flex;
             align-items: center;
             justify-content: center;
-            font-size: 16px;
+            font-size: 14px;
         }
 
-        .logo-text {
-            font-weight: 700;
-            font-size: 18px;
-            letter-spacing: -0.5px;
-        }
-
-        .status-badge {
+        .main-tabs {
             display: flex;
-            align-items: center;
-            gap: 8px;
-            padding: 6px 12px;
-            background: var(--status-completed-bg);
-            border-radius: 100px;
+            gap: 2px;
+            background: var(--bg-tertiary);
+            padding: 3px;
+            border-radius: var(--radius-sm);
+        }
+
+        .main-tab {
+            padding: 6px 14px;
+            border-radius: 4px;
             font-size: 13px;
             font-weight: 500;
-            color: var(--status-completed);
+            color: var(--text-secondary);
+            cursor: pointer;
+            border: none;
+            background: transparent;
+            transition: all var(--transition-fast);
         }
 
-        .status-badge.stopped {
-            background: var(--status-failed-bg);
-            color: var(--status-failed);
+        .main-tab:hover {
+            color: var(--text-primary);
         }
 
-        .status-dot {
-            width: 8px;
-            height: 8px;
-            border-radius: 50%;
-            background: currentColor;
-            animation: pulse 2s infinite;
+        .main-tab.active {
+            background: var(--bg-elevated);
+            color: var(--text-primary);
         }
 
-        .status-badge.stopped .status-dot {
-            animation: none;
+        .tab-badge {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            min-width: 18px;
+            height: 18px;
+            padding: 0 5px;
+            margin-left: 6px;
+            background: var(--status-failed);
+            color: white;
+            border-radius: 9px;
+            font-size: 10px;
+            font-weight: 600;
         }
 
-        @keyframes pulse {
-            0%, 100% { opacity: 1; }
-            50% { opacity: 0.5; }
+        .dead-letter-info {
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border-subtle);
+            border-radius: var(--radius-sm);
+            padding: 12px 16px;
+            margin-bottom: 16px;
+        }
+
+        .dead-letter-info p {
+            color: var(--text-secondary);
+            font-size: 13px;
+            margin: 0;
         }
 
         .navbar-right {
@@ -141,296 +161,260 @@
             gap: 16px;
         }
 
-        .search-box {
-            position: relative;
-        }
-
-        .search-input {
-            background: var(--bg-tertiary);
-            border: 1px solid var(--border-subtle);
-            border-radius: var(--radius-md);
-            padding: 8px 14px 8px 36px;
-            width: 240px;
-            color: var(--text-primary);
-            font-family: var(--font-sans);
-            font-size: 14px;
-            transition: all var(--transition-fast);
-        }
-
-        .search-input::placeholder {
-            color: var(--text-tertiary);
-        }
-
-        .search-input:focus {
-            outline: none;
-            border-color: var(--accent-primary);
-            box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.15);
-            width: 300px;
-        }
-
-        .search-icon {
-            position: absolute;
-            left: 12px;
-            top: 50%;
-            transform: translateY(-50%);
-            color: var(--text-tertiary);
-            width: 16px;
-            height: 16px;
-        }
-
-        .update-time {
+        .status-pill {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            padding: 4px 10px;
+            background: var(--status-completed-bg);
+            border-radius: 100px;
             font-size: 12px;
-            color: var(--text-tertiary);
+            font-weight: 500;
+            color: var(--status-completed);
         }
 
-        /* Main Content */
+        .status-pill.stopped {
+            background: var(--status-failed-bg);
+            color: var(--status-failed);
+        }
+
+        .status-pill .dot {
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            background: currentColor;
+        }
+
+        .connection-pill {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            padding: 4px 10px;
+            border-radius: 100px;
+            font-size: 11px;
+            font-weight: 500;
+            background: var(--status-completed-bg);
+            color: var(--status-completed);
+        }
+
+        .connection-pill.disconnected {
+            background: var(--status-failed-bg);
+            color: var(--status-failed);
+        }
+
+        /* Main */
         .main {
-            max-width: 1600px;
+            max-width: 1400px;
             margin: 0 auto;
             padding: 24px 32px;
         }
 
-        /* Stats Grid */
-        .stats-grid {
-            display: grid;
-            grid-template-columns: repeat(4, 1fr);
+        .view {
+            display: none;
+        }
+
+        .view.active {
+            display: block;
+        }
+
+        /* Stats Row */
+        .stats-row {
+            display: flex;
             gap: 16px;
             margin-bottom: 24px;
         }
 
-        .stat-card {
+        .stat-box {
             background: var(--bg-secondary);
             border: 1px solid var(--border-subtle);
-            border-radius: var(--radius-lg);
-            padding: 20px;
+            border-radius: var(--radius-md);
+            padding: 16px 20px;
+            flex: 1;
         }
 
         .stat-label {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            font-size: 13px;
+            font-size: 12px;
             color: var(--text-tertiary);
-            margin-bottom: 8px;
+            margin-bottom: 4px;
         }
 
         .stat-value {
-            font-size: 32px;
+            font-size: 24px;
             font-weight: 700;
-            letter-spacing: -1px;
             font-family: var(--font-mono);
         }
 
-        .stat-subtext {
-            font-size: 12px;
+        .stat-sub {
+            font-size: 11px;
             color: var(--text-tertiary);
-            margin-top: 4px;
+            margin-top: 2px;
         }
 
-        .stat-subtext.negative {
+        .stat-sub.bad {
             color: var(--status-failed);
         }
 
-        /* Content Grid - Jobs + Timeline side by side */
-        .content-grid {
-            display: grid;
-            grid-template-columns: 1fr 380px;
-            gap: 24px;
+        /* Jobs Table */
+        .section-box {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-subtle);
+            border-radius: var(--radius-lg);
+            overflow: hidden;
         }
 
-        /* Section Headers */
         .section-header {
             display: flex;
             align-items: center;
             justify-content: space-between;
-            margin-bottom: 16px;
+            padding: 16px 20px;
+            border-bottom: 1px solid var(--border-subtle);
         }
 
         .section-title {
-            display: flex;
-            align-items: center;
-            gap: 10px;
-            font-size: 16px;
+            font-size: 14px;
             font-weight: 600;
         }
 
-        .section-title svg {
-            width: 18px;
-            height: 18px;
+        .jobs-table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        .jobs-table th {
+            text-align: left;
+            padding: 10px 16px;
+            font-size: 11px;
+            font-weight: 600;
             color: var(--text-tertiary);
-        }
-
-        /* Filter Tabs */
-        .filter-tabs {
-            display: flex;
-            gap: 4px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
             background: var(--bg-tertiary);
-            padding: 4px;
-            border-radius: var(--radius-md);
+            border-bottom: 1px solid var(--border-subtle);
         }
 
-        .filter-tab {
-            padding: 6px 12px;
-            border-radius: var(--radius-sm);
+        .jobs-table td {
+            padding: 12px 16px;
             font-size: 13px;
-            font-weight: 500;
-            color: var(--text-secondary);
-            cursor: pointer;
-            transition: all var(--transition-fast);
-            border: none;
-            background: transparent;
+            border-bottom: 1px solid var(--border-subtle);
+            vertical-align: middle;
         }
 
-        .filter-tab:hover {
-            color: var(--text-primary);
+        .jobs-table tr:last-child td {
+            border-bottom: none;
         }
 
-        .filter-tab.active {
-            background: var(--bg-elevated);
-            color: var(--text-primary);
-            box-shadow: var(--shadow-sm);
-        }
-
-        .filter-count {
-            margin-left: 4px;
-            opacity: 0.6;
-        }
-
-        /* Jobs Grid */
-        .jobs-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
-            gap: 12px;
-        }
-
-        .job-card {
-            background: var(--bg-secondary);
-            border: 1px solid var(--border-subtle);
-            border-radius: var(--radius-lg);
-            padding: 16px;
-            cursor: pointer;
-            transition: all var(--transition-fast);
-        }
-
-        .job-card:hover {
-            border-color: var(--border-default);
-            transform: translateY(-1px);
-        }
-
-        .job-card.selected {
-            border-color: var(--accent-primary);
-            box-shadow: 0 0 0 1px var(--accent-primary);
-        }
-
-        .job-card.running {
-            border-left: 3px solid var(--status-running);
-        }
-
-        .job-card.paused {
-            border-left: 3px solid var(--status-paused);
-            opacity: 0.8;
-        }
-
-        .job-card.failed {
-            border-left: 3px solid var(--status-failed);
-        }
-
-        .job-header {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            margin-bottom: 12px;
+        .jobs-table tr:hover td {
+            background: rgba(255, 255, 255, 0.02);
         }
 
         .job-name {
-            font-weight: 600;
-            font-size: 15px;
             font-family: var(--font-mono);
+            font-weight: 500;
         }
 
-        .job-badge {
+        .job-schedule {
+            color: var(--text-secondary);
+        }
+
+        .job-status {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
             padding: 3px 8px;
             border-radius: 100px;
             font-size: 11px;
             font-weight: 600;
             text-transform: uppercase;
-            letter-spacing: 0.3px;
         }
 
-        .job-badge.scheduled {
+        .job-status.scheduled {
             background: var(--status-scheduled-bg);
             color: var(--status-scheduled);
         }
 
-        .job-badge.running {
+        .job-status.running {
             background: var(--status-running-bg);
             color: var(--status-running);
         }
 
-        .job-badge.paused {
+        .job-status.paused {
             background: var(--status-paused-bg);
             color: var(--status-paused);
         }
 
-        .job-badge.failed {
+        .job-status.failed {
             background: var(--status-failed-bg);
             color: var(--status-failed);
         }
 
-        .job-badge.completed {
-            background: var(--status-completed-bg);
-            color: var(--status-completed);
-        }
-
-        .job-meta {
-            display: grid;
-            grid-template-columns: repeat(3, 1fr);
-            gap: 8px;
-            margin-bottom: 12px;
-        }
-
-        .job-meta-item {
+        /* Run Indicators - 5 dots */
+        .run-dots {
             display: flex;
-            flex-direction: column;
-            gap: 2px;
+            gap: 4px;
         }
 
-        .job-meta-label {
+        .run-dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border-subtle);
+        }
+
+        .run-dot.success {
+            background: var(--status-completed);
+            border-color: var(--status-completed);
+        }
+
+        .run-dot.failed {
+            background: var(--status-failed);
+            border-color: var(--status-failed);
+        }
+
+        .run-dot-tooltip {
+            position: relative;
+        }
+
+        .run-dot-tooltip:hover::after {
+            content: attr(data-tooltip);
+            position: absolute;
+            bottom: 100%;
+            left: 50%;
+            transform: translateX(-50%);
+            background: var(--bg-elevated);
+            border: 1px solid var(--border-subtle);
+            padding: 4px 8px;
+            border-radius: 4px;
             font-size: 11px;
-            color: var(--text-tertiary);
-            text-transform: uppercase;
-            letter-spacing: 0.3px;
+            white-space: nowrap;
+            z-index: 10;
+            margin-bottom: 4px;
         }
 
-        .job-meta-value {
-            font-size: 13px;
-            color: var(--text-secondary);
+        .next-run {
             font-family: var(--font-mono);
+            font-size: 12px;
+            color: var(--text-secondary);
         }
 
-        .job-countdown {
+        .next-run-countdown {
             color: var(--accent-secondary);
+            font-weight: 500;
         }
 
-        .job-actions {
+        /* Action Buttons */
+        .action-btns {
             display: flex;
-            gap: 8px;
-            padding-top: 12px;
-            border-top: 1px solid var(--border-subtle);
+            gap: 4px;
         }
 
         .action-btn {
-            flex: 1;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            gap: 6px;
-            padding: 8px 12px;
+            padding: 5px 10px;
             background: var(--bg-tertiary);
             border: 1px solid var(--border-subtle);
-            border-radius: var(--radius-sm);
+            border-radius: 4px;
             color: var(--text-secondary);
-            font-size: 12px;
+            font-size: 11px;
             font-weight: 500;
             cursor: pointer;
             transition: all var(--transition-fast);
@@ -448,244 +432,150 @@
             border-color: var(--status-failed);
         }
 
-        .action-btn svg {
-            width: 14px;
-            height: 14px;
-        }
-
-        /* Timeline Section */
-        .timeline-section {
-            background: var(--bg-secondary);
-            border: 1px solid var(--border-subtle);
-            border-radius: var(--radius-lg);
-            padding: 20px;
-            height: fit-content;
-            position: sticky;
-            top: 88px;
-        }
-
-        .timeline-list {
-            display: flex;
-            flex-direction: column;
-            gap: 2px;
-            max-height: calc(100vh - 280px);
-            overflow-y: auto;
-        }
-
-        .timeline-item {
+        /* History Table */
+        .history-toolbar {
             display: flex;
             align-items: center;
             gap: 12px;
-            padding: 10px 12px;
-            border-radius: var(--radius-sm);
-            transition: background var(--transition-fast);
+            padding: 12px 20px;
+            border-bottom: 1px solid var(--border-subtle);
+            flex-wrap: wrap;
         }
 
-        .timeline-item:hover {
+        .filter-select {
             background: var(--bg-tertiary);
-        }
-
-        .timeline-icon {
-            width: 24px;
-            height: 24px;
-            border-radius: 50%;
-            display: flex;
-            align-items: center;
-            justify-content: center;
+            border: 1px solid var(--border-subtle);
+            border-radius: 4px;
+            padding: 6px 10px;
+            color: var(--text-primary);
             font-size: 12px;
-            flex-shrink: 0;
+            cursor: pointer;
         }
 
-        .timeline-icon.completed {
+        .filter-select:focus {
+            outline: none;
+            border-color: var(--accent-primary);
+        }
+
+        .search-input {
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border-subtle);
+            border-radius: 4px;
+            padding: 6px 10px;
+            color: var(--text-primary);
+            font-size: 12px;
+            width: 180px;
+        }
+
+        .search-input::placeholder {
+            color: var(--text-tertiary);
+        }
+
+        .search-input:focus {
+            outline: none;
+            border-color: var(--accent-primary);
+        }
+
+        .history-count {
+            margin-left: auto;
+            font-size: 12px;
+            color: var(--text-tertiary);
+        }
+
+        .history-table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        .history-table th {
+            text-align: left;
+            padding: 10px 16px;
+            font-size: 11px;
+            font-weight: 600;
+            color: var(--text-tertiary);
+            text-transform: uppercase;
+            background: var(--bg-tertiary);
+            position: sticky;
+            top: 0;
+        }
+
+        .history-table td {
+            padding: 10px 16px;
+            font-size: 13px;
+            border-bottom: 1px solid var(--border-subtle);
+        }
+
+        .history-table tr:hover td {
+            background: rgba(255, 255, 255, 0.02);
+        }
+
+        .history-status {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 100px;
+            font-size: 11px;
+            font-weight: 600;
+            text-transform: uppercase;
+        }
+
+        .history-status.completed {
             background: var(--status-completed-bg);
             color: var(--status-completed);
         }
 
-        .timeline-icon.failed {
+        .history-status.failed {
             background: var(--status-failed-bg);
             color: var(--status-failed);
         }
 
-        .timeline-icon.missed {
+        .history-status.missed {
             background: var(--status-running-bg);
             color: var(--status-running);
         }
 
-        .timeline-content {
-            flex: 1;
-            min-width: 0;
+        .history-job {
+            font-family: var(--font-mono);
+            font-weight: 500;
         }
 
-        .timeline-name {
-            font-size: 13px;
-            font-weight: 500;
+        .history-time {
             font-family: var(--font-mono);
-            white-space: nowrap;
+            font-size: 12px;
+            color: var(--text-secondary);
+        }
+
+        .history-duration {
+            font-family: var(--font-mono);
+            font-size: 12px;
+            color: var(--text-secondary);
+        }
+
+        .history-error {
+            color: var(--status-failed);
+            font-size: 12px;
+            max-width: 250px;
             overflow: hidden;
             text-overflow: ellipsis;
+            white-space: nowrap;
         }
 
-        .timeline-details {
-            display: flex;
-            gap: 8px;
-            font-size: 11px;
-            color: var(--text-tertiary);
-        }
-
-        .timeline-time {
-            font-size: 12px;
-            color: var(--text-tertiary);
-            font-family: var(--font-mono);
-            flex-shrink: 0;
-        }
-
-        /* Job Details Panel */
-        .panel-overlay {
-            position: fixed;
-            inset: 0;
-            background: rgba(0, 0, 0, 0.6);
-            opacity: 0;
-            visibility: hidden;
-            transition: all var(--transition-normal);
-            z-index: 200;
-        }
-
-        .panel-overlay.visible {
-            opacity: 1;
-            visibility: visible;
-        }
-
-        .job-details-panel {
-            position: fixed;
-            top: 0;
-            right: 0;
-            width: 440px;
-            height: 100vh;
-            background: var(--bg-secondary);
-            border-left: 1px solid var(--border-subtle);
-            transform: translateX(100%);
-            transition: transform var(--transition-normal);
-            z-index: 201;
-            display: flex;
-            flex-direction: column;
-        }
-
-        .job-details-panel.open {
-            transform: translateX(0);
-        }
-
-        .panel-header {
-            padding: 20px;
-            border-bottom: 1px solid var(--border-subtle);
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-        }
-
-        .panel-title {
-            font-size: 18px;
-            font-weight: 600;
-            font-family: var(--font-mono);
-        }
-
-        .panel-close {
-            width: 32px;
-            height: 32px;
-            border-radius: var(--radius-sm);
-            border: none;
-            background: transparent;
-            color: var(--text-secondary);
-            cursor: pointer;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            transition: all var(--transition-fast);
-        }
-
-        .panel-close:hover {
-            background: var(--bg-tertiary);
-            color: var(--text-primary);
-        }
-
-        .panel-content {
-            flex: 1;
-            overflow-y: auto;
-            padding: 20px;
-        }
-
-        .detail-section {
-            margin-bottom: 24px;
-        }
-
-        .detail-section h3 {
-            font-size: 12px;
-            font-weight: 600;
-            color: var(--text-tertiary);
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-            margin-bottom: 12px;
-        }
-
-        .detail-grid {
-            display: grid;
-            grid-template-columns: repeat(2, 1fr);
-            gap: 12px;
-        }
-
-        .detail-item {
-            background: var(--bg-tertiary);
-            padding: 12px;
-            border-radius: var(--radius-sm);
-        }
-
-        .detail-label {
-            font-size: 11px;
-            color: var(--text-tertiary);
-            margin-bottom: 4px;
-        }
-
-        .detail-value {
-            font-size: 14px;
-            font-family: var(--font-mono);
-        }
-
-        .history-list {
-            display: flex;
-            flex-direction: column;
-            gap: 8px;
-            max-height: 300px;
+        .history-container {
+            max-height: calc(100vh - 300px);
             overflow-y: auto;
         }
 
-        .history-item {
-            display: flex;
-            align-items: center;
-            gap: 10px;
-            padding: 10px;
-            background: var(--bg-tertiary);
-            border-radius: var(--radius-sm);
-            font-size: 13px;
+        /* Empty state */
+        .empty-state {
+            padding: 48px;
+            text-align: center;
+            color: var(--text-tertiary);
         }
 
-        .history-status {
-            width: 8px;
-            height: 8px;
-            border-radius: 50%;
-        }
-
-        .history-status.completed {
-            background: var(--status-completed);
-        }
-
-        .history-status.failed {
-            background: var(--status-failed);
-        }
-
-        /* Toast Notifications */
+        /* Toast */
         .toast-container {
             position: fixed;
-            bottom: 24px;
-            right: 24px;
+            bottom: 20px;
+            right: 20px;
             z-index: 300;
             display: flex;
             flex-direction: column;
@@ -695,14 +585,12 @@
         .toast {
             display: flex;
             align-items: center;
-            gap: 12px;
-            padding: 14px 16px;
+            gap: 10px;
+            padding: 12px 14px;
             background: var(--bg-elevated);
             border: 1px solid var(--border-subtle);
             border-radius: var(--radius-md);
-            box-shadow: var(--shadow-lg);
-            animation: slideIn 0.3s ease;
-            max-width: 360px;
+            animation: slideIn 0.2s ease;
         }
 
         @keyframes slideIn {
@@ -710,6 +598,7 @@
                 transform: translateX(100%);
                 opacity: 0;
             }
+
             to {
                 transform: translateX(0);
                 opacity: 1;
@@ -717,14 +606,13 @@
         }
 
         .toast-icon {
-            width: 20px;
-            height: 20px;
+            width: 18px;
+            height: 18px;
             border-radius: 50%;
             display: flex;
             align-items: center;
             justify-content: center;
-            font-size: 12px;
-            flex-shrink: 0;
+            font-size: 11px;
         }
 
         .toast.success .toast-icon {
@@ -737,86 +625,12 @@
             color: var(--status-failed);
         }
 
-        .toast-content {
-            flex: 1;
-        }
-
-        .toast-title {
-            font-weight: 600;
+        .toast-text {
             font-size: 13px;
-            margin-bottom: 2px;
-        }
-
-        .toast-message {
-            font-size: 12px;
-            color: var(--text-secondary);
-        }
-
-        /* Connection Badge */
-        .connection-badge {
-            display: flex;
-            align-items: center;
-            gap: 6px;
-            padding: 4px 10px;
-            border-radius: 100px;
-            font-size: 11px;
-            font-weight: 500;
-        }
-
-        .connection-badge.connected {
-            background: var(--status-completed-bg);
-            color: var(--status-completed);
-        }
-
-        .connection-badge.disconnected {
-            background: var(--status-failed-bg);
-            color: var(--status-failed);
-        }
-
-        .connection-dot {
-            width: 6px;
-            height: 6px;
-            border-radius: 50%;
-            background: currentColor;
-        }
-
-        /* Empty State */
-        .empty-state {
-            text-align: center;
-            padding: 48px 24px;
-            color: var(--text-tertiary);
-        }
-
-        .empty-state svg {
-            width: 48px;
-            height: 48px;
-            margin-bottom: 16px;
-            opacity: 0.5;
-        }
-
-        .empty-state h3 {
-            font-size: 16px;
-            font-weight: 600;
-            color: var(--text-secondary);
-            margin-bottom: 8px;
         }
 
         /* Responsive */
-        @media (max-width: 1200px) {
-            .content-grid {
-                grid-template-columns: 1fr;
-            }
-
-            .timeline-section {
-                position: static;
-            }
-
-            .timeline-list {
-                max-height: 400px;
-            }
-        }
-
-        @media (max-width: 768px) {
+        @media (max-width: 900px) {
             .navbar {
                 padding: 0 16px;
             }
@@ -825,35 +639,30 @@
                 padding: 16px;
             }
 
-            .stats-grid {
-                grid-template-columns: repeat(2, 1fr);
+            .stats-row {
+                flex-wrap: wrap;
             }
 
-            .jobs-grid {
-                grid-template-columns: 1fr;
+            .stat-box {
+                flex: 1 1 45%;
             }
 
-            .search-input {
-                width: 180px;
+            .jobs-table,
+            .history-table {
+                font-size: 12px;
             }
 
-            .search-input:focus {
-                width: 220px;
-            }
-
-            .job-details-panel {
-                width: 100%;
-            }
-
-            .filter-tabs {
-                overflow-x: auto;
+            .jobs-table th,
+            .jobs-table td,
+            .history-table th,
+            .history-table td {
+                padding: 8px 12px;
             }
         }
 
         /* Scrollbar */
         ::-webkit-scrollbar {
             width: 6px;
-            height: 6px;
         }
 
         ::-webkit-scrollbar-track {
@@ -864,667 +673,507 @@
             background: var(--border-default);
             border-radius: 3px;
         }
-
-        ::-webkit-scrollbar-thumb:hover {
-            background: var(--text-tertiary);
-        }
     </style>
 </head>
+
 <body>
-    <!-- Top Navbar -->
     <nav class="navbar">
         <div class="navbar-left">
             <div class="logo">
                 <div class="logo-icon">⚡</div>
-                <span class="logo-text">FastScheduler</span>
+                <span>FastScheduler</span>
             </div>
-            <div id="scheduler-status" class="status-badge">
-                <span class="status-dot"></span>
-                <span>Running</span>
+            <div class="main-tabs">
+                <button class="main-tab active" onclick="switchView('dashboard')">Dashboard</button>
+                <button class="main-tab" onclick="switchView('history')">History</button>
+                <button class="main-tab" onclick="switchView('failed')">Failed <span id="failed-badge" class="tab-badge"
+                        style="display: none;">0</span></button>
             </div>
         </div>
         <div class="navbar-right">
-            <div class="search-box">
-                <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <circle cx="11" cy="11" r="8"/>
-                    <path d="m21 21-4.3-4.3"/>
-                </svg>
-                <input type="text" class="search-input" placeholder="Search jobs..." id="search-input">
+            <div id="scheduler-status" class="status-pill">
+                <span class="dot"></span>
+                <span>Running</span>
             </div>
-            <span class="update-time" id="last-update">--</span>
-            <div id="connection-badge" class="connection-badge disconnected">
-                <span class="connection-dot"></span>
-                <span id="connection-text">Connecting...</span>
+            <div id="connection-badge" class="connection-pill disconnected">
+                <span class="dot"></span>
+                <span id="connection-text">Connecting</span>
             </div>
         </div>
     </nav>
 
-    <!-- Main Content -->
     <main class="main">
-        <!-- Stats Grid -->
-        <div class="stats-grid">
-            <div class="stat-card">
-                <div class="stat-label">
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <path d="M12 8v4l3 3"/>
-                        <circle cx="12" cy="12" r="9"/>
-                    </svg>
-                    Active Jobs
+        <!-- Dashboard View -->
+        <div id="dashboard-view" class="view active">
+            <div class="stats-row">
+                <div class="stat-box">
+                    <div class="stat-label">Active Jobs</div>
+                    <div class="stat-value" id="stat-jobs">0</div>
                 </div>
-                <div class="stat-value" id="stat-jobs">0</div>
+                <div class="stat-box">
+                    <div class="stat-label">Total Runs</div>
+                    <div class="stat-value" id="stat-runs">0</div>
+                </div>
+                <div class="stat-box">
+                    <div class="stat-label">Failures</div>
+                    <div class="stat-value" id="stat-failures">0</div>
+                    <div class="stat-sub" id="stat-rate"></div>
+                </div>
+                <div class="stat-box">
+                    <div class="stat-label">Uptime</div>
+                    <div class="stat-value" id="stat-uptime">--</div>
+                </div>
             </div>
-            <div class="stat-card">
-                <div class="stat-label">
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
-                    </svg>
-                    Total Runs
+
+            <div class="section-box">
+                <div class="section-header">
+                    <div class="section-title">Scheduled Jobs</div>
+                    <div id="jobs-count" style="font-size: 12px; color: var(--text-tertiary);"></div>
                 </div>
-                <div class="stat-value" id="stat-runs">0</div>
-            </div>
-            <div class="stat-card">
-                <div class="stat-label">
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <circle cx="12" cy="12" r="10"/>
-                        <line x1="12" y1="8" x2="12" y2="12"/>
-                        <line x1="12" y1="16" x2="12.01" y2="16"/>
-                    </svg>
-                    Failures
-                </div>
-                <div class="stat-value" id="stat-failures">0</div>
-                <div class="stat-subtext" id="stat-success-rate">--</div>
-            </div>
-            <div class="stat-card">
-                <div class="stat-label">
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <circle cx="12" cy="12" r="10"/>
-                        <polyline points="12 6 12 12 16 14"/>
-                    </svg>
-                    Uptime
-                </div>
-                <div class="stat-value" id="stat-uptime">--</div>
+                <table class="jobs-table">
+                    <thead>
+                        <tr>
+                            <th>Job</th>
+                            <th>Schedule</th>
+                            <th>Status</th>
+                            <th>Last 5 Runs</th>
+                            <th>Next Run</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="jobs-tbody"></tbody>
+                </table>
             </div>
         </div>
 
-        <!-- Content Grid -->
-        <div class="content-grid">
-            <!-- Jobs Section -->
-            <section class="jobs-section">
+        <!-- History View -->
+        <div id="history-view" class="view">
+            <div class="section-box">
                 <div class="section-header">
-                    <div class="section-title">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/>
-                            <line x1="16" y1="2" x2="16" y2="6"/>
-                            <line x1="8" y1="2" x2="8" y2="6"/>
-                            <line x1="3" y1="10" x2="21" y2="10"/>
-                        </svg>
-                        Scheduled Jobs
-                    </div>
-                    <div class="filter-tabs">
-                        <button class="filter-tab active" data-filter="all">All <span class="filter-count" id="count-all">0</span></button>
-                        <button class="filter-tab" data-filter="running">Running <span class="filter-count" id="count-running">0</span></button>
-                        <button class="filter-tab" data-filter="scheduled">Scheduled <span class="filter-count" id="count-scheduled">0</span></button>
-                        <button class="filter-tab" data-filter="paused">Paused <span class="filter-count" id="count-paused">0</span></button>
-                        <button class="filter-tab" data-filter="failed">Failed <span class="filter-count" id="count-failed">0</span></button>
-                    </div>
+                    <div class="section-title">Execution History</div>
                 </div>
-                <div class="jobs-grid" id="jobs-grid">
-                    <!-- Job cards rendered here -->
+                <div class="history-toolbar">
+                    <select class="filter-select" id="history-status-filter">
+                        <option value="all">All Statuses</option>
+                        <option value="completed">Completed</option>
+                        <option value="failed">Failed</option>
+                        <option value="missed">Missed</option>
+                    </select>
+                    <select class="filter-select" id="history-job-filter">
+                        <option value="all">All Jobs</option>
+                    </select>
+                    <input type="text" class="search-input" placeholder="Search..." id="history-search">
+                    <div class="history-count" id="history-count">0 entries</div>
                 </div>
-            </section>
+                <div class="history-container">
+                    <table class="history-table">
+                        <thead>
+                            <tr>
+                                <th>Status</th>
+                                <th>Job</th>
+                                <th>Time</th>
+                                <th>Duration</th>
+                                <th>Details</th>
+                            </tr>
+                        </thead>
+                        <tbody id="history-tbody"></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
 
-            <!-- Timeline Section -->
-            <section class="timeline-section">
+        <!-- Failed Jobs (Dead Letter Queue) View -->
+        <div id="failed-view" class="view">
+            <div class="section-box">
                 <div class="section-header">
-                    <div class="section-title">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
-                        </svg>
-                        Recent Activity
-                    </div>
+                    <div class="section-title">Failed Jobs (Dead Letter Queue)</div>
+                    <button class="action-btn danger" onclick="clearDeadLetters()" id="clear-dead-letters-btn"
+                        style="display: none;">Clear All</button>
                 </div>
-                <div class="timeline-list" id="timeline-list">
-                    <!-- Timeline items rendered here -->
+                <div class="dead-letter-info">
+                    <p>Jobs that have exhausted all retry attempts are logged here. Use this to diagnose recurring
+                        issues and track job failures.</p>
                 </div>
-            </section>
+                <div class="history-toolbar">
+                    <input type="text" class="search-input" placeholder="Search failed jobs..." id="failed-search">
+                    <div class="history-count" id="failed-count">0 entries</div>
+                </div>
+                <div class="history-container">
+                    <table class="history-table">
+                        <thead>
+                            <tr>
+                                <th>Time</th>
+                                <th>Job</th>
+                                <th>Error</th>
+                                <th>Run #</th>
+                                <th>Retries</th>
+                                <th>Duration</th>
+                            </tr>
+                        </thead>
+                        <tbody id="failed-tbody"></tbody>
+                    </table>
+                </div>
+            </div>
         </div>
     </main>
 
-    <!-- Job Details Panel -->
-    <div class="panel-overlay" id="panel-overlay"></div>
-    <aside class="job-details-panel" id="job-details-panel">
-        <div class="panel-header">
-            <span class="panel-title" id="panel-job-name">Job Name</span>
-            <button class="panel-close" onclick="closeJobPanel()">
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <line x1="18" y1="6" x2="6" y2="18"/>
-                    <line x1="6" y1="6" x2="18" y2="18"/>
-                </svg>
-            </button>
-        </div>
-        <div class="panel-content">
-            <div class="detail-section">
-                <h3>Status</h3>
-                <div id="panel-status-badge"></div>
-            </div>
-            <div class="detail-section">
-                <h3>Details</h3>
-                <div class="detail-grid" id="panel-details">
-                    <!-- Details rendered here -->
-                </div>
-            </div>
-            <div class="detail-section">
-                <h3>Recent Executions</h3>
-                <div class="history-list" id="panel-history">
-                    <!-- History items -->
-                </div>
-            </div>
-            <div class="detail-section">
-                <h3>Actions</h3>
-                <div style="display: flex; gap: 8px; flex-wrap: wrap;" id="panel-actions">
-                    <!-- Action buttons -->
-                </div>
-            </div>
-        </div>
-    </aside>
-
-    <!-- Toast Container -->
     <div class="toast-container" id="toast-container"></div>
 
     <script>
-        // State
         let eventSource = null;
-        let currentData = { jobs: [], history: [], stats: {}, running: false };
-        let selectedJobId = null;
-        let currentFilter = 'all';
-        let searchQuery = '';
-        let previousHistory = [];
+        let data = { jobs: [], history: [], stats: {}, running: false, dead_letters: [], dead_letter_count: 0 };
+        let prevHistory = [];
+        let currentView = 'dashboard';
+        let historyStatusFilter = 'all';
+        let historyJobFilter = 'all';
+        let historySearch = '';
+        let failedSearch = '';
 
-        // SSE prefix for API calls
-        const API_PREFIX = '{{prefix}}';
+        const API = '{{prefix}}';
 
-        // Initialize
         document.addEventListener('DOMContentLoaded', () => {
-            setupEventListeners();
+            setupListeners();
             connectSSE();
         });
 
-        function setupEventListeners() {
-            // Filter tabs
-            document.querySelectorAll('.filter-tab').forEach(tab => {
-                tab.addEventListener('click', () => {
-                    document.querySelectorAll('.filter-tab').forEach(t => t.classList.remove('active'));
-                    tab.classList.add('active');
-                    currentFilter = tab.dataset.filter;
-                    renderJobs();
-                });
+        function setupListeners() {
+            document.getElementById('history-status-filter').addEventListener('change', e => {
+                historyStatusFilter = e.target.value;
+                renderHistory();
             });
-
-            // Search input
-            document.getElementById('search-input').addEventListener('input', (e) => {
-                searchQuery = e.target.value.toLowerCase();
-                renderJobs();
+            document.getElementById('history-job-filter').addEventListener('change', e => {
+                historyJobFilter = e.target.value;
+                renderHistory();
             });
-
-            // Panel overlay
-            document.getElementById('panel-overlay').addEventListener('click', closeJobPanel);
-
-            // Keyboard shortcuts
-            document.addEventListener('keydown', (e) => {
-                if (e.key === 'Escape') closeJobPanel();
+            document.getElementById('history-search').addEventListener('input', e => {
+                historySearch = e.target.value.toLowerCase();
+                renderHistory();
+            });
+            document.getElementById('failed-search').addEventListener('input', e => {
+                failedSearch = e.target.value.toLowerCase();
+                renderFailed();
             });
         }
 
-        // SSE Connection
+        function switchView(view) {
+            currentView = view;
+            document.querySelectorAll('.main-tab').forEach((t, i) => {
+                t.classList.toggle('active',
+                    (view === 'dashboard' && i === 0) ||
+                    (view === 'history' && i === 1) ||
+                    (view === 'failed' && i === 2)
+                );
+            });
+            document.getElementById('dashboard-view').classList.toggle('active', view === 'dashboard');
+            document.getElementById('history-view').classList.toggle('active', view === 'history');
+            document.getElementById('failed-view').classList.toggle('active', view === 'failed');
+            if (view === 'history') renderHistory();
+            if (view === 'failed') renderFailed();
+        }
+
         function connectSSE() {
-            if (eventSource) {
-                eventSource.close();
-            }
+            if (eventSource) eventSource.close();
+            eventSource = new EventSource(`${API}/events`);
 
-            eventSource = new EventSource(`${API_PREFIX}/events`);
-
-            eventSource.onopen = () => {
-                updateConnectionStatus(true);
-            };
-
-            eventSource.onmessage = (event) => {
-                try {
-                    const data = JSON.parse(event.data);
-                    updateDashboard(data);
-                } catch (e) {
-                    console.error('Failed to parse SSE data:', e);
-                }
-            };
-
+            eventSource.onopen = () => updateConnection(true);
             eventSource.onerror = () => {
                 eventSource.close();
-                updateConnectionStatus(false);
+                updateConnection(false);
                 setTimeout(connectSSE, 2000);
+            };
+            eventSource.onmessage = e => {
+                try {
+                    const newData = JSON.parse(e.data);
+                    checkForToasts(newData);
+                    data = newData;
+                    render();
+                } catch (err) {
+                    console.error('Parse error:', err);
+                }
             };
         }
 
-        function updateConnectionStatus(connected) {
+        function updateConnection(connected) {
             const badge = document.getElementById('connection-badge');
             const text = document.getElementById('connection-text');
-            
-            if (connected) {
-                badge.classList.remove('disconnected');
-                badge.classList.add('connected');
-                text.textContent = 'Live';
-            } else {
-                badge.classList.remove('connected');
-                badge.classList.add('disconnected');
-                text.textContent = 'Reconnecting...';
-            }
+            badge.classList.toggle('disconnected', !connected);
+            text.textContent = connected ? 'Live' : 'Offline';
         }
 
-        // Dashboard Update
-        function updateDashboard(data) {
-            // Check for new completions/failures to show toasts
-            if (previousHistory.length > 0) {
-                const newEvents = data.history.filter(h => 
-                    !previousHistory.find(ph => ph.timestamp === h.timestamp && ph.job_id === h.job_id)
-                );
-                
-                newEvents.forEach(event => {
-                    if (event.status === 'completed') {
-                        showToast('success', 'Job Completed', `${event.func_name} completed successfully`);
-                    } else if (event.status === 'failed') {
-                        showToast('error', 'Job Failed', `${event.func_name} failed: ${event.error || 'Unknown error'}`);
-                    }
-                });
+        function checkForToasts(newData) {
+            if (prevHistory.length === 0) {
+                prevHistory = [...newData.history];
+                return;
             }
-            previousHistory = [...data.history];
+            const newEvents = newData.history.filter(h =>
+                !prevHistory.find(p => p.timestamp === h.timestamp && p.job_id === h.job_id)
+            );
+            newEvents.forEach(evt => {
+                if (evt.status === 'completed') {
+                    toast('success', `${evt.func_name} completed`);
+                } else if (evt.status === 'failed') {
+                    toast('error', `${evt.func_name} failed`);
+                }
+            });
+            prevHistory = [...newData.history];
+        }
 
-            currentData = data;
+        function render() {
+            // Status
+            const statusEl = document.getElementById('scheduler-status');
+            statusEl.classList.toggle('stopped', !data.running);
+            statusEl.innerHTML = `<span class="dot"></span><span>${data.running ? 'Running' : 'Stopped'}</span>`;
 
-            // Update scheduler status
-            const statusBadge = document.getElementById('scheduler-status');
-            if (data.running) {
-                statusBadge.classList.remove('stopped');
-                statusBadge.innerHTML = '<span class="status-dot"></span><span>Running</span>';
-            } else {
-                statusBadge.classList.add('stopped');
-                statusBadge.innerHTML = '<span class="status-dot"></span><span>Stopped</span>';
-            }
-
-            // Update stats
+            // Stats
             document.getElementById('stat-jobs').textContent = data.jobs.length;
-            document.getElementById('stat-runs').textContent = formatNumber(data.stats.total_runs || 0);
-            document.getElementById('stat-failures').textContent = formatNumber(data.stats.total_failures || 0);
+            document.getElementById('stat-runs').textContent = (data.stats.total_runs || 0).toLocaleString();
+            document.getElementById('stat-failures').textContent = data.stats.total_failures || 0;
             document.getElementById('stat-uptime').textContent = data.stats.uptime_readable || '--';
 
-            // Calculate success rate
-            const totalRuns = data.stats.total_runs || 0;
-            const failures = data.stats.total_failures || 0;
-            if (totalRuns > 0) {
-                const rate = ((totalRuns - failures) / totalRuns * 100).toFixed(1);
-                document.getElementById('stat-success-rate').textContent = `${rate}% success rate`;
-                document.getElementById('stat-success-rate').classList.toggle('negative', parseFloat(rate) < 95);
+            const runs = data.stats.total_runs || 0;
+            const fails = data.stats.total_failures || 0;
+            const rateEl = document.getElementById('stat-rate');
+            if (runs > 0) {
+                const rate = ((runs - fails) / runs * 100).toFixed(1);
+                rateEl.textContent = `${rate}% success`;
+                rateEl.classList.toggle('bad', parseFloat(rate) < 95);
+            } else {
+                rateEl.textContent = '';
             }
 
-            // Update filter counts
-            updateFilterCounts(data.jobs);
-
-            // Update last update time
-            document.getElementById('last-update').textContent = new Date().toLocaleTimeString();
-
-            // Render jobs and timeline
-            renderJobs();
-            renderTimeline();
-
-            // Update panel if open
-            if (selectedJobId) {
-                const job = data.jobs.find(j => j.job_id === selectedJobId);
-                if (job) {
-                    renderJobPanel(job);
-                }
+            // Update failed badge
+            const failedBadge = document.getElementById('failed-badge');
+            const deadLetterCount = data.dead_letter_count || 0;
+            if (deadLetterCount > 0) {
+                failedBadge.style.display = 'inline-flex';
+                failedBadge.textContent = deadLetterCount > 99 ? '99+' : deadLetterCount;
+            } else {
+                failedBadge.style.display = 'none';
             }
+
+            // Show/hide clear button
+            const clearBtn = document.getElementById('clear-dead-letters-btn');
+            clearBtn.style.display = deadLetterCount > 0 ? 'block' : 'none';
+
+            // Render current view
+            if (currentView === 'dashboard') {
+                renderJobs();
+            } else if (currentView === 'history') {
+                renderHistory();
+            } else if (currentView === 'failed') {
+                renderFailed();
+            }
+
+            // Update job filter dropdown
+            updateJobDropdown();
         }
 
-        function updateFilterCounts(jobs) {
-            document.getElementById('count-all').textContent = jobs.length;
-            document.getElementById('count-running').textContent = jobs.filter(j => j.status === 'running').length;
-            document.getElementById('count-scheduled').textContent = jobs.filter(j => j.status === 'scheduled').length;
-            document.getElementById('count-paused').textContent = jobs.filter(j => j.status === 'paused').length;
-            document.getElementById('count-failed').textContent = jobs.filter(j => j.status === 'failed').length;
-        }
-
-        // Render Jobs
         function renderJobs() {
-            const container = document.getElementById('jobs-grid');
-            let jobs = currentData.jobs;
+            const tbody = document.getElementById('jobs-tbody');
+            const jobs = [...data.jobs].sort((a, b) => a.func_name.localeCompare(b.func_name));
 
-            // Apply filter
-            if (currentFilter !== 'all') {
-                jobs = jobs.filter(j => j.status === currentFilter);
-            }
-
-            // Apply search
-            if (searchQuery) {
-                jobs = jobs.filter(j => 
-                    j.func_name.toLowerCase().includes(searchQuery) ||
-                    j.schedule.toLowerCase().includes(searchQuery)
-                );
-            }
+            document.getElementById('jobs-count').textContent = `${jobs.length} job${jobs.length !== 1 ? 's' : ''}`;
 
             if (jobs.length === 0) {
-                container.innerHTML = `
-                    <div class="empty-state">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-                            <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/>
-                            <line x1="16" y1="2" x2="16" y2="6"/>
-                            <line x1="8" y1="2" x2="8" y2="6"/>
-                            <line x1="3" y1="10" x2="21" y2="10"/>
-                        </svg>
-                        <h3>No jobs found</h3>
-                        <p>${searchQuery ? 'Try a different search term' : 'No scheduled jobs'}</p>
-                    </div>
-                `;
+                tbody.innerHTML = '<tr><td colspan="6" class="empty-state">No scheduled jobs</td></tr>';
                 return;
             }
 
-            container.innerHTML = jobs.map(job => {
-                const statusClass = job.status;
-                const isSelected = job.job_id === selectedJobId;
-                
+            tbody.innerHTML = jobs.map(job => {
+                const lastRuns = getLastRuns(job.func_name, 5);
+                const runDots = lastRuns.map((r, i) => {
+                    const cls = r ? (r.status === 'completed' ? 'success' : 'failed') : '';
+                    const tip = r ? `${r.status} - ${formatTime(r.timestamp_readable)}` : 'No data';
+                    return `<div class="run-dot ${cls} run-dot-tooltip" data-tooltip="${esc(tip)}"></div>`;
+                }).join('');
+
                 return `
-                    <div class="job-card ${statusClass} ${isSelected ? 'selected' : ''}" 
-                         onclick="openJobPanel('${job.job_id}')"
-                         data-job-id="${job.job_id}">
-                        <div class="job-header">
-                            <span class="job-name">${escapeHtml(job.func_name)}</span>
-                            <span class="job-badge ${statusClass}">${job.status}</span>
-                        </div>
-                        <div class="job-meta">
-                            <div class="job-meta-item">
-                                <span class="job-meta-label">Schedule</span>
-                                <span class="job-meta-value">${escapeHtml(job.schedule)}</span>
+                    <tr>
+                        <td><span class="job-name">${esc(job.func_name)}</span></td>
+                        <td><span class="job-schedule">${esc(job.schedule)}</span></td>
+                        <td><span class="job-status ${job.status}">${job.status}</span></td>
+                        <td><div class="run-dots">${runDots}</div></td>
+                        <td>
+                            <div class="next-run">${job.next_run}</div>
+                            <div class="next-run-countdown">${formatCountdown(job.next_run_in)}</div>
+                        </td>
+                        <td>
+                            <div class="action-btns">
+                                ${job.status === 'paused'
+                        ? `<button class="action-btn" onclick="resumeJob('${job.job_id}')">Resume</button>`
+                        : `<button class="action-btn" onclick="pauseJob('${job.job_id}')">Pause</button>`
+                    }
+                                <button class="action-btn danger" onclick="cancelJob('${job.job_id}')">Cancel</button>
                             </div>
-                            <div class="job-meta-item">
-                                <span class="job-meta-label">Next Run</span>
-                                <span class="job-meta-value job-countdown">${formatCountdown(job.next_run_in)}</span>
-                            </div>
-                            <div class="job-meta-item">
-                                <span class="job-meta-label">Executions</span>
-                                <span class="job-meta-value">${job.run_count}</span>
-                            </div>
-                        </div>
-                        <div class="job-actions">
-                            ${job.status === 'paused' 
-                                ? `<button class="action-btn" onclick="event.stopPropagation(); resumeJob('${job.job_id}')">
-                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                        <polygon points="5 3 19 12 5 21 5 3"/>
-                                    </svg>
-                                    Resume
-                                   </button>`
-                                : `<button class="action-btn" onclick="event.stopPropagation(); pauseJob('${job.job_id}')">
-                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                        <rect x="6" y="4" width="4" height="16"/>
-                                        <rect x="14" y="4" width="4" height="16"/>
-                                    </svg>
-                                    Pause
-                                   </button>`
-                            }
-                            <button class="action-btn danger" onclick="event.stopPropagation(); cancelJob('${job.job_id}')">
-                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                    <line x1="18" y1="6" x2="6" y2="18"/>
-                                    <line x1="6" y1="6" x2="18" y2="18"/>
-                                </svg>
-                                Cancel
-                            </button>
-                        </div>
-                    </div>
+                        </td>
+                    </tr>
                 `;
             }).join('');
         }
 
-        // Render Timeline
-        function renderTimeline() {
-            const container = document.getElementById('timeline-list');
-            // Filter to only show completed, failed, and missed events (not running/scheduled)
-            const history = [...currentData.history]
-                .reverse()
-                .filter(event => ['completed', 'failed', 'missed'].includes(event.status))
-                .slice(0, 25);
+        function getLastRuns(funcName, count) {
+            // Get last N completed/failed runs for this job
+            const runs = data.history
+                .filter(h => h.func_name === funcName && ['completed', 'failed'].includes(h.status))
+                .slice(-count);
 
+            // Pad with nulls if less than count
+            while (runs.length < count) runs.unshift(null);
+            return runs;
+        }
+
+        function renderHistory() {
+            // Filter to only show completed, failed, missed (not running/scheduled)
+            let history = data.history
+                .filter(h => ['completed', 'failed', 'missed'].includes(h.status))
+                .reverse();
+
+            if (historyStatusFilter !== 'all') {
+                history = history.filter(h => h.status === historyStatusFilter);
+            }
+            if (historyJobFilter !== 'all') {
+                history = history.filter(h => h.func_name === historyJobFilter);
+            }
+            if (historySearch) {
+                history = history.filter(h =>
+                    h.func_name.toLowerCase().includes(historySearch) ||
+                    (h.error && h.error.toLowerCase().includes(historySearch))
+                );
+            }
+
+            document.getElementById('history-count').textContent = `${history.length} entries`;
+
+            const tbody = document.getElementById('history-tbody');
             if (history.length === 0) {
-                container.innerHTML = `
-                    <div class="empty-state" style="padding: 24px">
-                        <p>No activity yet</p>
-                    </div>
-                `;
+                tbody.innerHTML = '<tr><td colspan="5" class="empty-state">No history entries</td></tr>';
                 return;
             }
 
-            const statusIcons = {
-                completed: '✓',
-                failed: '✗',
-                missed: '!'
-            };
-
-            container.innerHTML = history.map(event => `
-                <div class="timeline-item">
-                    <div class="timeline-icon ${event.status}">
-                        ${statusIcons[event.status] || '-'}
-                    </div>
-                    <div class="timeline-content">
-                        <div class="timeline-name">${escapeHtml(event.func_name)}</div>
-                        <div class="timeline-details">
-                            <span>${event.status}</span>
-                            ${event.execution_time ? `<span>${event.execution_time.toFixed(2)}s</span>` : ''}
-                        </div>
-                    </div>
-                    <div class="timeline-time">${formatTime(event.timestamp_readable)}</div>
-                </div>
+            tbody.innerHTML = history.map(h => `
+                <tr>
+                    <td><span class="history-status ${h.status}">${h.status}</span></td>
+                    <td><span class="history-job">${esc(h.func_name)}</span></td>
+                    <td><span class="history-time">${h.timestamp_readable || formatTs(h.timestamp)}</span></td>
+                    <td><span class="history-duration">${h.execution_time ? h.execution_time.toFixed(2) + 's' : '-'}</span></td>
+                    <td>${h.error
+                    ? `<span class="history-error" title="${esc(h.error)}">${esc(h.error)}</span>`
+                    : `<span style="color:var(--text-tertiary)">Run #${h.run_count || '-'}</span>`
+                }</td>
+                </tr>
             `).join('');
         }
 
-        // Job Panel
-        function openJobPanel(jobId) {
-            selectedJobId = jobId;
-            const job = currentData.jobs.find(j => j.job_id === jobId);
-            if (!job) return;
+        function renderFailed() {
+            let deadLetters = data.dead_letters || [];
 
-            renderJobPanel(job);
+            if (failedSearch) {
+                deadLetters = deadLetters.filter(dl =>
+                    dl.func_name.toLowerCase().includes(failedSearch) ||
+                    (dl.error && dl.error.toLowerCase().includes(failedSearch))
+                );
+            }
 
-            document.getElementById('job-details-panel').classList.add('open');
-            document.getElementById('panel-overlay').classList.add('visible');
-            
-            // Update selected state in job cards
-            document.querySelectorAll('.job-card').forEach(card => {
-                card.classList.toggle('selected', card.dataset.jobId === jobId);
-            });
+            document.getElementById('failed-count').textContent = `${deadLetters.length} entries`;
+
+            const tbody = document.getElementById('failed-tbody');
+            if (deadLetters.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="6" class="empty-state">No failed jobs in dead letter queue</td></tr>';
+                return;
+            }
+
+            tbody.innerHTML = deadLetters.map(dl => `
+                <tr>
+                    <td><span class="history-time">${dl.timestamp_readable || formatTs(dl.timestamp)}</span></td>
+                    <td><span class="history-job">${esc(dl.func_name)}</span></td>
+                    <td><span class="history-error" title="${esc(dl.error || '')}">${esc(dl.error || 'Unknown error')}</span></td>
+                    <td><span style="color:var(--text-secondary)">#${dl.run_count || '-'}</span></td>
+                    <td><span style="color:var(--text-secondary)">${dl.retry_count || 0}</span></td>
+                    <td><span class="history-duration">${dl.execution_time ? dl.execution_time.toFixed(2) + 's' : '-'}</span></td>
+                </tr>
+            `).join('');
         }
 
-        function renderJobPanel(job) {
-            document.getElementById('panel-job-name').textContent = job.func_name;
-            
-            document.getElementById('panel-status-badge').innerHTML = `
-                <span class="job-badge ${job.status}" style="font-size: 13px; padding: 6px 12px;">
-                    ${job.status.toUpperCase()}
-                </span>
-            `;
+        function updateJobDropdown() {
+            const select = document.getElementById('history-job-filter');
+            const current = select.value;
+            const names = [...new Set(data.history.map(h => h.func_name))].sort();
 
-            document.getElementById('panel-details').innerHTML = `
-                <div class="detail-item">
-                    <div class="detail-label">Job ID</div>
-                    <div class="detail-value">${job.job_id}</div>
-                </div>
-                <div class="detail-item">
-                    <div class="detail-label">Schedule</div>
-                    <div class="detail-value">${escapeHtml(job.schedule)}</div>
-                </div>
-                <div class="detail-item">
-                    <div class="detail-label">Next Run</div>
-                    <div class="detail-value">${job.next_run}</div>
-                </div>
-                <div class="detail-item">
-                    <div class="detail-label">Run Count</div>
-                    <div class="detail-value">${job.run_count}</div>
-                </div>
-                <div class="detail-item">
-                    <div class="detail-label">Last Run</div>
-                    <div class="detail-value">${job.last_run || 'Never'}</div>
-                </div>
-                <div class="detail-item">
-                    <div class="detail-label">Retries</div>
-                    <div class="detail-value">${job.retry_count}</div>
-                </div>
-            `;
+            select.innerHTML = '<option value="all">All Jobs</option>' +
+                names.map(n => `<option value="${esc(n)}">${esc(n)}</option>`).join('');
 
-            // Render job-specific history
-            const jobHistory = currentData.history
-                .filter(h => h.func_name === job.func_name && ['completed', 'failed'].includes(h.status))
-                .slice(-10)
-                .reverse();
-
-            document.getElementById('panel-history').innerHTML = jobHistory.length > 0 
-                ? jobHistory.map(h => `
-                    <div class="history-item">
-                        <div class="history-status ${h.status}"></div>
-                        <span style="flex: 1">${h.status}</span>
-                        ${h.execution_time ? `<span style="color: var(--text-tertiary)">${h.execution_time.toFixed(2)}s</span>` : ''}
-                        <span style="color: var(--text-tertiary)">${formatTime(h.timestamp_readable)}</span>
-                    </div>
-                `).join('')
-                : '<div style="color: var(--text-tertiary); font-size: 13px;">No history yet</div>';
-
-            document.getElementById('panel-actions').innerHTML = `
-                ${job.status === 'paused' 
-                    ? `<button class="action-btn" onclick="resumeJob('${job.job_id}')" style="flex: 1;">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <polygon points="5 3 19 12 5 21 5 3"/>
-                        </svg>
-                        Resume Job
-                       </button>`
-                    : `<button class="action-btn" onclick="pauseJob('${job.job_id}')" style="flex: 1;">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <rect x="6" y="4" width="4" height="16"/>
-                            <rect x="14" y="4" width="4" height="16"/>
-                        </svg>
-                        Pause Job
-                       </button>`
-                }
-                <button class="action-btn danger" onclick="cancelJob('${job.job_id}')" style="flex: 1;">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <line x1="18" y1="6" x2="6" y2="18"/>
-                        <line x1="6" y1="6" x2="18" y2="18"/>
-                    </svg>
-                    Cancel Job
-                </button>
-            `;
-        }
-
-        function closeJobPanel() {
-            selectedJobId = null;
-            document.getElementById('job-details-panel').classList.remove('open');
-            document.getElementById('panel-overlay').classList.remove('visible');
-            
-            document.querySelectorAll('.job-card').forEach(card => {
-                card.classList.remove('selected');
-            });
-        }
-
-        // API Actions
-        async function pauseJob(jobId) {
-            try {
-                const response = await fetch(`${API_PREFIX}/api/jobs/${jobId}/pause`, { method: 'POST' });
-                const data = await response.json();
-                if (data.success) {
-                    showToast('success', 'Job Paused', `${jobId} has been paused`);
-                } else {
-                    showToast('error', 'Error', data.error || 'Failed to pause job');
-                }
-            } catch (e) {
-                showToast('error', 'Error', 'Failed to pause job');
+            if (names.includes(current) || current === 'all') {
+                select.value = current;
             }
         }
 
-        async function resumeJob(jobId) {
-            try {
-                const response = await fetch(`${API_PREFIX}/api/jobs/${jobId}/resume`, { method: 'POST' });
-                const data = await response.json();
-                if (data.success) {
-                    showToast('success', 'Job Resumed', `${jobId} has been resumed`);
-                } else {
-                    showToast('error', 'Error', data.error || 'Failed to resume job');
-                }
-            } catch (e) {
-                showToast('error', 'Error', 'Failed to resume job');
-            }
+        // Actions
+        async function pauseJob(id) {
+            const res = await fetch(`${API}/api/jobs/${id}/pause`, { method: 'POST' });
+            const d = await res.json();
+            toast(d.success ? 'success' : 'error', d.success ? 'Job paused' : d.error);
         }
 
-        async function cancelJob(jobId) {
-            if (!confirm('Are you sure you want to cancel this job?')) return;
-            
-            try {
-                const response = await fetch(`${API_PREFIX}/api/jobs/${jobId}/cancel`, { method: 'POST' });
-                const data = await response.json();
-                if (data.success) {
-                    showToast('success', 'Job Cancelled', `${jobId} has been removed`);
-                    closeJobPanel();
-                } else {
-                    showToast('error', 'Error', data.error || 'Failed to cancel job');
-                }
-            } catch (e) {
-                showToast('error', 'Error', 'Failed to cancel job');
-            }
+        async function resumeJob(id) {
+            const res = await fetch(`${API}/api/jobs/${id}/resume`, { method: 'POST' });
+            const d = await res.json();
+            toast(d.success ? 'success' : 'error', d.success ? 'Job resumed' : d.error);
         }
 
-        // Toast Notifications
-        function showToast(type, title, message) {
+        async function cancelJob(id) {
+            if (!confirm('Cancel this job?')) return;
+            const res = await fetch(`${API}/api/jobs/${id}/cancel`, { method: 'POST' });
+            const d = await res.json();
+            toast(d.success ? 'success' : 'error', d.success ? 'Job cancelled' : d.error);
+        }
+
+        async function clearDeadLetters() {
+            if (!confirm('Clear all failed job entries from the dead letter queue?')) return;
+            const res = await fetch(`${API}/api/dead-letters`, { method: 'DELETE' });
+            const d = await res.json();
+            toast(d.success ? 'success' : 'error', d.success ? `Cleared ${d.cleared} entries` : 'Failed to clear');
+        }
+
+        // Toast
+        function toast(type, msg) {
             const container = document.getElementById('toast-container');
-            const toast = document.createElement('div');
-            toast.className = `toast ${type}`;
-            toast.innerHTML = `
-                <div class="toast-icon">${type === 'success' ? '✓' : '✗'}</div>
-                <div class="toast-content">
-                    <div class="toast-title">${title}</div>
-                    <div class="toast-message">${message}</div>
-                </div>
-            `;
-            container.appendChild(toast);
-
+            const el = document.createElement('div');
+            el.className = `toast ${type}`;
+            el.innerHTML = `<div class="toast-icon">${type === 'success' ? '✓' : '✗'}</div><div class="toast-text">${esc(msg)}</div>`;
+            container.appendChild(el);
             setTimeout(() => {
-                toast.style.opacity = '0';
-                toast.style.transform = 'translateX(100%)';
-                setTimeout(() => toast.remove(), 300);
-            }, 4000);
+                el.style.opacity = '0';
+                setTimeout(() => el.remove(), 200);
+            }, 3000);
         }
 
-        // Utility Functions
-        function formatNumber(num) {
-            return num.toLocaleString();
+        // Utils
+        function formatCountdown(s) {
+            if (s <= 0) return 'Now';
+            if (s < 60) return `${Math.round(s)}s`;
+            if (s < 3600) return `${Math.floor(s / 60)}m ${Math.round(s % 60)}s`;
+            if (s < 86400) return `${Math.floor(s / 3600)}h ${Math.floor((s % 3600) / 60)}m`;
+            return `${Math.floor(s / 86400)}d`;
         }
 
-        function formatCountdown(seconds) {
-            if (seconds <= 0) return 'Now';
-            if (seconds < 60) return `${Math.round(seconds)}s`;
-            if (seconds < 3600) return `${Math.floor(seconds / 60)}m ${Math.round(seconds % 60)}s`;
-            if (seconds < 86400) return `${Math.floor(seconds / 3600)}h ${Math.floor((seconds % 3600) / 60)}m`;
-            return `${Math.floor(seconds / 86400)}d`;
+        function formatTime(str) {
+            if (!str) return '';
+            const parts = str.split(' ');
+            return parts[1] || str;
         }
 
-        function formatTime(timeStr) {
-            if (!timeStr) return '';
-            const parts = timeStr.split(' ');
-            return parts[1] || timeStr;
+        function formatTs(ts) {
+            return ts ? new Date(ts * 1000).toLocaleString() : '';
         }
 
-        function escapeHtml(text) {
-            if (!text) return '';
-            const div = document.createElement('div');
-            div.textContent = text;
-            return div.innerHTML;
+        function esc(s) {
+            if (!s) return '';
+            const d = document.createElement('div');
+            d.textContent = s;
+            return d.innerHTML;
         }
 
-        // Cleanup on page unload
-        window.addEventListener('beforeunload', () => {
-            if (eventSource) {
-                eventSource.close();
-            }
-        });
+        window.addEventListener('beforeunload', () => eventSource?.close());
     </script>
 </body>
+
 </html>

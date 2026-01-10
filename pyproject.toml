@@ -1,6 +1,6 @@
 [project]
 name = "fastscheduler"
-version = "0.1.1"
+version = "0.1.2"
 description = "Simple, lightweight task scheduler for Python with async support"
 readme = "README.md"
 requires-python = ">=3.10"

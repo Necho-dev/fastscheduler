@@ -360,3 +360,81 @@ class TestJobActionEndpoints:
         data = response.json()
         assert "error" in data
 
+
+class TestDeadLetterAPI:
+    """Test dead letter queue API endpoints"""
+
+    @pytest.fixture
+    def client_with_dead_letters(self, tmp_path):
+        """Create a client with scheduler that has dead letters"""
+        from fastscheduler.main import JobStatus
+
+        app = FastAPI()
+        state_file = tmp_path / "test_scheduler.json"
+        scheduler = FastScheduler(state_file=str(state_file), quiet=True, auto_start=False)
+        app.include_router(create_scheduler_routes(scheduler))
+
+        # Add some dead letters
+        scheduler._log_history(
+            job_id="job_1",
+            func_name="failing_job_1",
+            status=JobStatus.FAILED,
+            error="Max retries: Error 1",
+        )
+        scheduler._log_history(
+            job_id="job_2",
+            func_name="failing_job_2",
+            status=JobStatus.FAILED,
+            error="Max retries: Error 2",
+        )
+
+        client = TestClient(app)
+        yield client, scheduler
+        scheduler.stop()
+
+    def test_get_dead_letters(self, client_with_dead_letters):
+        """Test getting dead letters via API"""
+        client, scheduler = client_with_dead_letters
+
+        response = client.get("/scheduler/api/dead-letters")
+        assert response.status_code == 200
+        data = response.json()
+        assert "dead_letters" in data
+        assert "total" in data
+        assert data["total"] == 2
+        assert len(data["dead_letters"]) == 2
+
+    def test_get_dead_letters_with_limit(self, client_with_dead_letters):
+        """Test getting dead letters with limit parameter"""
+        client, scheduler = client_with_dead_letters
+
+        response = client.get("/scheduler/api/dead-letters?limit=1")
+        assert response.status_code == 200
+        data = response.json()
+        assert len(data["dead_letters"]) == 1
+        assert data["total"] == 2  # Total count should still be 2
+
+    def test_clear_dead_letters(self, client_with_dead_letters):
+        """Test clearing dead letters via API"""
+        client, scheduler = client_with_dead_letters
+
+        # Verify we have dead letters
+        assert len(scheduler.dead_letters) == 2
+
+        response = client.delete("/scheduler/api/dead-letters")
+        assert response.status_code == 200
+        data = response.json()
+        assert data["success"] is True
+        assert data["cleared"] == 2
+
+        # Verify they're cleared
+        assert len(scheduler.dead_letters) == 0
+
+    def test_empty_dead_letters(self, client, scheduler):
+        """Test getting dead letters when queue is empty"""
+        response = client.get("/scheduler/api/dead-letters")
+        assert response.status_code == 200
+        data = response.json()
+        assert data["dead_letters"] == []
+        assert data["total"] == 0
+

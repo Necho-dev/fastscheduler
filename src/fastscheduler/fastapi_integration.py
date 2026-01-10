@@ -63,6 +63,7 @@ def create_scheduler_routes(scheduler: "FastScheduler", prefix: str = "/schedule
                 stats = scheduler.get_statistics()
                 jobs = scheduler.get_jobs()
                 history = scheduler.get_history(limit=50)
+                dead_letters = scheduler.get_dead_letters(limit=100)
 
                 # Prepare data
                 data = {
@@ -70,6 +71,8 @@ def create_scheduler_routes(scheduler: "FastScheduler", prefix: str = "/schedule
                     "stats": stats,
                     "jobs": jobs,
                     "history": history,
+                    "dead_letters": dead_letters,
+                    "dead_letter_count": len(scheduler.dead_letters),
                 }
 
                 # Send as SSE event
@@ -160,5 +163,19 @@ def create_scheduler_routes(scheduler: "FastScheduler", prefix: str = "/schedule
     async def get_history(func_name: Optional[str] = None, limit: int = 50):
         """Get job history"""
         return {"history": scheduler.get_history(func_name, limit)}
+
+    @router.get("/api/dead-letters")
+    async def get_dead_letters(limit: int = 100):
+        """Get dead letter queue (failed jobs)"""
+        return {
+            "dead_letters": scheduler.get_dead_letters(limit),
+            "total": len(scheduler.dead_letters),
+        }
+
+    @router.delete("/api/dead-letters")
+    async def clear_dead_letters():
+        """Clear all dead letter entries"""
+        count = scheduler.clear_dead_letters()
+        return {"success": True, "cleared": count}
 
     return router

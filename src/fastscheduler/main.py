@@ -152,6 +152,7 @@ class FastScheduler:
         max_history: Maximum number of history entries to keep (default: 10000)
         max_workers: Maximum number of worker threads for job execution (default: 10)
         history_retention_days: Maximum age of history entries in days (default: 7)
+        max_dead_letters: Maximum number of failed job entries to keep in dead letter queue (default: 500)
     """
 
     def __init__(
@@ -162,6 +163,7 @@ class FastScheduler:
         max_history: int = 10000,
         max_workers: int = 10,
         history_retention_days: int = 7,
+        max_dead_letters: int = 500,
     ):
         self.state_file = Path(state_file)
         self.jobs: List[Job] = []
@@ -175,6 +177,7 @@ class FastScheduler:
         self.max_history = max_history
         self.max_workers = max_workers
         self.history_retention_days = history_retention_days
+        self.max_dead_letters = max_dead_letters
         self.quiet = quiet  # Quiet mode for less verbose output
         self._running_jobs: set = set()  # Track currently executing jobs
         self._executor = ThreadPoolExecutor(
@@ -182,6 +185,12 @@ class FastScheduler:
         )
         self._save_executor = ThreadPoolExecutor(
             max_workers=1, thread_name_prefix="FastScheduler-Saver"
+        )
+
+        # Dead letter queue - stores failed job executions
+        self.dead_letters: List[JobHistory] = []
+        self._dead_letters_file = Path(
+            str(self.state_file).replace(".json", "_dead_letters.json")
         )
 
         # Statistics
@@ -194,6 +203,7 @@ class FastScheduler:
 
         # Load previous state
         self._load_state()
+        self._load_dead_letters()
 
         if auto_start:
             self.start()
@@ -317,6 +327,15 @@ class FastScheduler:
             self.history.append(history_entry)
             # Apply both count and time-based limits
             self._cleanup_history()
+
+            # Add failed entries to dead letter queue
+            # Include: final failures (Max retries) and any failed entries with errors
+            if status == JobStatus.FAILED and error:
+                self.dead_letters.append(history_entry)
+                # Enforce dead letter queue limit
+                if len(self.dead_letters) > self.max_dead_letters:
+                    self.dead_letters = self.dead_letters[-self.max_dead_letters :]
+                self._save_dead_letters_async()
 
     def _cleanup_history(self):
         """Clean up old history entries based on count and age limits.
@@ -733,6 +752,76 @@ class FastScheduler:
         except Exception as e:
             logger.error(f"Failed to load state: {e}")
 
+    def _load_dead_letters(self):
+        """Load dead letter queue from disk"""
+        if not self._dead_letters_file.exists():
+            return
+
+        try:
+            with open(self._dead_letters_file, "r") as f:
+                data = json.load(f)
+
+            self.dead_letters = [
+                JobHistory(**{k: v for k, v in h.items() if k != "timestamp_readable"})
+                for h in data.get("dead_letters", [])
+            ]
+
+            # Enforce limit
+            if len(self.dead_letters) > self.max_dead_letters:
+                self.dead_letters = self.dead_letters[-self.max_dead_letters :]
+
+            if not self.quiet and self.dead_letters:
+                logger.info(f"Loaded {len(self.dead_letters)} dead letter entries")
+
+        except Exception as e:
+            logger.error(f"Failed to load dead letters: {e}")
+
+    def _save_dead_letters_async(self):
+        """Save dead letters asynchronously"""
+        try:
+            self._save_executor.submit(self._save_dead_letters)
+        except Exception as e:
+            logger.error(f"Failed to queue dead letters save: {e}")
+
+    def _save_dead_letters(self):
+        """Save dead letter queue to disk"""
+        try:
+            with self.lock:
+                data = {
+                    "dead_letters": [dl.to_dict() for dl in self.dead_letters],
+                    "max_dead_letters": self.max_dead_letters,
+                }
+
+            with open(self._dead_letters_file, "w") as f:
+                json.dump(data, f, indent=2)
+
+        except Exception as e:
+            logger.error(f"Failed to save dead letters: {e}")
+
+    def get_dead_letters(self, limit: int = 100) -> List[Dict]:
+        """Get dead letter queue entries (failed jobs)
+
+        Args:
+            limit: Maximum number of entries to return
+
+        Returns:
+            List of failed job history entries, most recent first
+        """
+        with self.lock:
+            return [dl.to_dict() for dl in self.dead_letters[-limit:][::-1]]
+
+    def clear_dead_letters(self) -> int:
+        """Clear all dead letter entries
+
+        Returns:
+            Number of entries cleared
+        """
+        with self.lock:
+            count = len(self.dead_letters)
+            self.dead_letters = []
+        self._save_dead_letters_async()
+        return count
+
     # ==================== Monitoring & Management ====================
 
     def get_jobs(self) -> List[Dict]:
@@ -870,7 +959,8 @@ class FastScheduler:
                     job.paused = True
                     if not self.quiet:
                         logger.info(f"Paused job: {job.func_name} ({job_id})")
-                    self._save_state_async()
+                    # Save state synchronously to ensure SSE picks up the change immediately
+                    self._save_state()
                     return True
         return False
 
@@ -890,7 +980,8 @@ class FastScheduler:
                     job.paused = False
                     if not self.quiet:
                         logger.info(f"Resumed job: {job.func_name} ({job_id})")
-                    self._save_state_async()
+                    # Save state synchronously to ensure SSE picks up the change immediately
+                    self._save_state()
                     return True
         return False
 
