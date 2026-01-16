@@ -428,6 +428,34 @@ class TestSchedulerLifecycle:
         # Should stop within reasonable time
         assert elapsed < 15
 
+    def test_stop_timeout_parameter_passed_to_thread_join(self, scheduler):
+        """Test that stop() passes the timeout parameter to thread.join()"""
+
+        @scheduler.every(10).seconds
+        def test_job():
+            pass
+
+        scheduler.start()
+        assert scheduler.running
+        time.sleep(0.1)
+
+        original_join = scheduler.thread.join
+        captured_timeout = []
+
+        def patched_join(timeout=None):
+            captured_timeout.append(timeout)
+            return original_join(timeout=0.1)
+
+        scheduler.thread.join = patched_join
+
+        scheduler.stop(wait=True, timeout=3)
+
+        assert len(captured_timeout) == 1, "thread.join() should have been called once"
+        assert captured_timeout[0] == 3, (
+            f"stop(timeout=3) should pass 3 to thread.join(), "
+            f"but passed {captured_timeout[0]} instead"
+        )
+
 
 class TestJobScheduleDescriptions:
     """Test human-readable schedule descriptions"""

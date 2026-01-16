@@ -383,7 +383,7 @@ class FastScheduler:
         self.running = False
 
         if wait and self.thread and self.thread.is_alive():
-            self.thread.join(timeout=5)
+            self.thread.join(timeout=timeout)
 
         # Shutdown executors
         if wait:
