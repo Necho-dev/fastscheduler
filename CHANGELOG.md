@@ -7,6 +7,7 @@
 - Pluggable storage backend architecture
 - New `storage` and `database_url` parameters on FastScheduler
 - `uv add fastscheduler --extras database` optional dependency
+- Manual job trigger via dashboard "Run" button and `run_job_now()` method
 
 ### Changed
 - Refactored persistence to use storage backends internally

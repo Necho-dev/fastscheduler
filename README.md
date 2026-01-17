@@ -219,7 +219,7 @@ Access at `http://localhost:8000/scheduler/`
 
 - **Real-time updates** via Server-Sent Events (SSE)
 - **Job table** with status indicators, last 5 run results, and countdown timers
-- **Quick actions** - Pause/Resume/Cancel directly from the UI
+- **Quick actions** - Run/Pause/Resume/Cancel directly from the UI
 - **Execution history** tab with filtering and search
 - **Dead letter queue** tab - view failed jobs with error details
 - **Statistics** - Success rate, uptime, active jobs count
@@ -235,6 +235,7 @@ Access at `http://localhost:8000/scheduler/`
 | `/scheduler/api/jobs/{job_id}`        | GET    | Get specific job                |
 | `/scheduler/api/jobs/{job_id}/pause`  | POST   | Pause a job                     |
 | `/scheduler/api/jobs/{job_id}/resume` | POST   | Resume a job                    |
+| `/scheduler/api/jobs/{job_id}/run`    | POST   | Trigger immediate execution     |
 | `/scheduler/api/jobs/{job_id}/cancel` | POST   | Cancel a job                    |
 | `/scheduler/api/history`              | GET    | Execution history               |
 | `/scheduler/api/dead-letters`         | GET    | Dead letter queue (failed jobs) |
@@ -487,6 +488,7 @@ def background_job():
 | `clear_dead_letters()`                  | Clear all dead letter entries       |
 | `pause_job(job_id)`                     | Pause a job                         |
 | `resume_job(job_id)`                    | Resume a paused job                 |
+| `run_job_now(job_id)`                   | Trigger immediate execution         |
 | `cancel_job(job_id)`                    | Cancel and remove a job             |
 | `cancel_job_by_name(func_name)`         | Cancel all jobs by function name    |
 | `print_status()`                        | Print status to console             |

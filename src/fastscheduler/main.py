@@ -845,6 +845,20 @@ class FastScheduler:
                     return True
         return False
 
+    def run_job_now(self, job_id: str) -> bool:
+        """Trigger immediate execution of a job (useful for debugging)."""
+        with self.lock:
+            for job in self.jobs:
+                if job.job_id == job_id:
+                    if job.job_id in self._running_jobs:
+                        logger.warning(f"Job {job_id} is already running")
+                        return False
+                    if not self.quiet:
+                        logger.info(f"Manually triggered: {job.func_name} ({job_id})")
+                    self._executor.submit(self._execute_job, job)
+                    return True
+        return False
+
     def get_job(self, job_id: str) -> Optional[Dict]:
         """Get a specific job by ID."""
         with self.lock:
