@@ -17,6 +17,7 @@ If this saves you time, ⭐️ the repo and open an issue for ideas — I'm acti
 - 🕐 **Timezone support** - Schedule jobs in any timezone
 - 📅 **Cron expressions** - Complex schedules with cron syntax
 - 💾 **Persistent state** - Survives restarts, handles missed jobs
+- 🗄️ **Database support** - SQLite, PostgreSQL, MySQL via SQLModel
 - 🎨 **FastAPI dashboard** - Beautiful real-time monitoring UI
 - 🔄 **Automatic retries** - Configurable retry with exponential backoff
 - ⏱️ **Job timeouts** - Kill long-running jobs automatically
@@ -34,6 +35,9 @@ pip install fastscheduler[fastapi]
 
 # With cron expression support
 pip install fastscheduler[cron]
+
+# With database support (SQLite, PostgreSQL, MySQL)
+pip install fastscheduler[database]
 
 # All features
 pip install fastscheduler[all]
@@ -241,7 +245,9 @@ Access at `http://localhost:8000/scheduler/`
 
 ```python
 scheduler = FastScheduler(
-    state_file="scheduler.json",    # Persistence file (default: fastscheduler_state.json)
+    state_file="scheduler.json",    # Persistence file for JSON backend (default: fastscheduler_state.json)
+    storage="json",                 # Storage backend: "json" (default) or "sqlmodel"
+    database_url=None,              # Database URL for sqlmodel backend
     quiet=True,                     # Suppress log messages (default: False)
     auto_start=False,               # Start immediately (default: False)
     max_history=5000,               # Max history entries to keep (default: 10000)
@@ -275,9 +281,74 @@ scheduler.clear_dead_letters()
 The dead letter queue:
 
 - Stores the last `max_dead_letters` failed jobs (default: 500)
-- Persists to a separate JSON file (`*_dead_letters.json`)
+- Persists to a separate JSON file (`*_dead_letters.json`) or database table
 - Includes error messages, timestamps, run counts, and execution times
 - Viewable in the dashboard "Failed" tab
+
+## Database Storage
+
+For production workloads requiring transactional integrity and concurrency, use database storage instead of JSON files.
+
+Requires: `pip install fastscheduler[database]`
+
+### SQLite (Recommended for Single-Server)
+
+```python
+scheduler = FastScheduler(
+    storage="sqlmodel",
+    database_url="sqlite:///scheduler.db"
+)
+```
+
+### PostgreSQL (Recommended for Production)
+
+```python
+scheduler = FastScheduler(
+    storage="sqlmodel",
+    database_url="postgresql://user:password@localhost:5432/mydb"
+)
+```
+
+### MySQL
+
+```python
+scheduler = FastScheduler(
+    storage="sqlmodel",
+    database_url="mysql://user:password@localhost:3306/mydb"
+)
+```
+
+### Custom Storage Backend
+
+Implement your own storage by subclassing `StorageBackend`:
+
+```python
+from fastscheduler.storage import StorageBackend
+
+class MyCustomBackend(StorageBackend):
+    def save_state(self, jobs, history, statistics, job_counter, scheduler_running):
+        # Your implementation
+        ...
+    
+    def load_state(self):
+        # Your implementation
+        ...
+    
+    # Implement other required methods...
+
+scheduler = FastScheduler(storage=MyCustomBackend())
+```
+
+### Database Tables
+
+When using SQLModel storage, the following tables are created automatically:
+
+| Table | Purpose |
+|-------|---------|
+| `scheduler_jobs` | Active job definitions |
+| `scheduler_history` | Execution history |
+| `scheduler_dead_letters` | Failed job records |
+| `scheduler_metadata` | Job counter, statistics |
 
 ## Monitoring
 
@@ -317,7 +388,7 @@ with FastScheduler(quiet=True) as scheduler:
 
 ## State Persistence
 
-FastScheduler automatically saves state to disk:
+FastScheduler automatically saves state to disk (JSON) or database:
 
 - Job definitions and schedules
 - Execution history
@@ -329,6 +400,8 @@ On restart, it:
 1. Restores all jobs
 2. Calculates missed executions
 3. Runs catch-up jobs (unless `no_catch_up()` is set)
+
+Use JSON storage (default) for simple setups, or database storage for production workloads with multiple instances or high reliability requirements. See [Database Storage](#database-storage) for details.
 
 ## Examples
 
