@@ -88,7 +88,7 @@ def create_scheduler_routes(scheduler: "FastScheduler", prefix: str = "/schedule
                 # Log the actual error with context
                 logger.error(
                     f"Error in SSE event generator: {type(e).__name__}: {e}",
-                    exc_info=True
+                    exc_info=True,
                 )
                 # Wait before retrying to prevent tight error loops
                 await asyncio.sleep(1)
@@ -111,10 +111,10 @@ def create_scheduler_routes(scheduler: "FastScheduler", prefix: str = "/schedule
         """Web dashboard for scheduler monitoring"""
         # Load and render template
         template = _load_dashboard_template()
-        
+
         # Replace template variables
         html = template.replace("{{prefix}}", prefix)
-        
+
         return html
 
     @router.get("/api/status")
@@ -158,6 +158,14 @@ def create_scheduler_routes(scheduler: "FastScheduler", prefix: str = "/schedule
         if success:
             return {"success": True, "message": f"Job {job_id} cancelled"}
         return {"success": False, "error": f"Job {job_id} not found"}
+
+    @router.post("/api/jobs/{job_id}/run")
+    async def run_job_now(job_id: str):
+        """Trigger immediate execution of a job"""
+        success = scheduler.run_job_now(job_id)
+        if success:
+            return {"success": True, "message": f"Job {job_id} triggered"}
+        return {"success": False, "error": f"Job {job_id} not found or already running"}
 
     @router.get("/api/history")
     async def get_history(func_name: Optional[str] = None, limit: int = 50):

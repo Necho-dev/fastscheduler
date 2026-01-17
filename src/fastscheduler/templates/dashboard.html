@@ -1003,6 +1003,7 @@
                         ? `<button class="action-btn" onclick="resumeJob('${job.job_id}')">Resume</button>`
                         : `<button class="action-btn" onclick="pauseJob('${job.job_id}')">Pause</button>`
                     }
+                                <button class="action-btn" onclick="runJobNow('${job.job_id}')" ${job.status === 'running' ? 'disabled' : ''}>Run</button>
                                 <button class="action-btn danger" onclick="cancelJob('${job.job_id}')">Cancel</button>
                             </div>
                         </td>
@@ -1124,6 +1125,12 @@
             const res = await fetch(`${API}/api/jobs/${id}/cancel`, { method: 'POST' });
             const d = await res.json();
             toast(d.success ? 'success' : 'error', d.success ? 'Job cancelled' : d.error);
+        }
+
+        async function runJobNow(id) {
+            const res = await fetch(`${API}/api/jobs/${id}/run`, { method: 'POST' });
+            const d = await res.json();
+            toast(d.success ? 'success' : 'error', d.success ? 'Job triggered' : d.error);
         }
 
         async function clearDeadLetters() {

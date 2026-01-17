@@ -1,22 +1,32 @@
+"""FastScheduler - Simple, powerful, persistent task scheduler."""
+
 import asyncio
 import heapq
 import itertools
-import json
 import logging
-import re
 import threading
 import time
 import traceback
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor
-from dataclasses import asdict, dataclass, field
 from datetime import datetime, timedelta
-from enum import Enum
 from pathlib import Path
-from typing import Callable, Dict, Iterator, List, Optional, Union
+from typing import TYPE_CHECKING, Callable, Dict, Iterator, List, Optional, Union
 from zoneinfo import ZoneInfo
 
-# Optional croniter import for cron expression support
+from .models import Job, JobHistory, JobStatus
+from .schedulers import (
+    CronScheduler,
+    DailyScheduler,
+    HourlyScheduler,
+    IntervalScheduler,
+    OnceScheduler,
+    WeeklyScheduler,
+)
+
+if TYPE_CHECKING:
+    from .storage import StorageBackend
+
 try:
     from croniter import croniter
 
@@ -25,139 +35,51 @@ except ImportError:
     CRONITER_AVAILABLE = False
     croniter = None  # type: ignore
 
-# Set up logger without configuring global logging (let the application configure handlers)
 logger = logging.getLogger("fastscheduler")
 logger.addHandler(logging.NullHandler())
 
 
-class JobStatus(Enum):
-    SCHEDULED = "scheduled"
-    RUNNING = "running"
-    COMPLETED = "completed"
-    FAILED = "failed"
-    MISSED = "missed"
-
-
-@dataclass(order=True)
-class Job:
-    next_run: float = field(compare=True)
-    func: Optional[Callable] = field(default=None, compare=False, repr=False)
-    interval: Optional[float] = field(default=None, compare=False)
-    job_id: str = field(default="", compare=False)
-    func_name: str = field(default="", compare=False)
-    func_module: str = field(default="", compare=False)
-    args: tuple = field(default_factory=tuple, compare=False, repr=False)
-    kwargs: dict = field(default_factory=dict, compare=False, repr=False)
-    repeat: bool = field(default=False, compare=False)
-    status: JobStatus = field(default=JobStatus.SCHEDULED, compare=False)
-    created_at: float = field(default_factory=time.time, compare=False)
-    last_run: Optional[float] = field(default=None, compare=False)
-    run_count: int = field(default=0, compare=False)
-    max_retries: int = field(default=3, compare=False)
-    retry_count: int = field(default=0, compare=False)
-    catch_up: bool = field(default=True, compare=False)
-    schedule_type: str = field(default="interval", compare=False)
-    schedule_time: Optional[str] = field(default=None, compare=False)
-    schedule_days: Optional[List[int]] = field(default=None, compare=False)
-    timeout: Optional[float] = field(default=None, compare=False)  # Timeout in seconds
-    paused: bool = field(default=False, compare=False)
-    timezone: Optional[str] = field(
-        default=None, compare=False
-    )  # Timezone for time-based schedules
-    cron_expression: Optional[str] = field(
-        default=None, compare=False
-    )  # Cron expression for cron schedules
-
-    def to_dict(self) -> Dict:
-        """Serialize job for persistence"""
-        return {
-            "job_id": self.job_id,
-            "func_name": self.func_name,
-            "func_module": self.func_module,
-            "next_run": self.next_run,
-            "interval": self.interval,
-            "repeat": self.repeat,
-            "status": self.status.value,
-            "created_at": self.created_at,
-            "last_run": self.last_run,
-            "run_count": self.run_count,
-            "max_retries": self.max_retries,
-            "retry_count": self.retry_count,
-            "catch_up": self.catch_up,
-            "schedule_type": self.schedule_type,
-            "schedule_time": self.schedule_time,
-            "schedule_days": self.schedule_days,
-            "timeout": self.timeout,
-            "paused": self.paused,
-            "timezone": self.timezone,
-            "cron_expression": self.cron_expression,
-        }
-
-    def get_schedule_description(self) -> str:
-        """Get human-readable schedule description"""
-        tz_suffix = f" ({self.timezone})" if self.timezone else ""
-
-        if self.schedule_type == "cron" and self.cron_expression:
-            return f"Cron: {self.cron_expression}{tz_suffix}"
-        elif self.schedule_type == "daily" and self.schedule_time:
-            return f"Daily at {self.schedule_time}{tz_suffix}"
-        elif (
-            self.schedule_type == "weekly" and self.schedule_time and self.schedule_days
-        ):
-            days = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
-            day_names = [days[d] for d in self.schedule_days]
-            return f"Every {', '.join(day_names)} at {self.schedule_time}{tz_suffix}"
-        elif self.schedule_type == "hourly" and self.schedule_time:
-            return f"Hourly at {self.schedule_time}{tz_suffix}"
-        elif self.schedule_type == "interval" and self.interval:
-            if self.interval < 60:
-                return f"Every {int(self.interval)} seconds"
-            elif self.interval < 3600:
-                return f"Every {int(self.interval/60)} minutes"
-            elif self.interval < 86400:
-                return f"Every {int(self.interval/3600)} hours"
-            else:
-                return f"Every {int(self.interval/86400)} days"
-        return "One-time job"
-
-
-@dataclass
-class JobHistory:
-    job_id: str
-    func_name: str
-    status: str
-    timestamp: float
-    error: Optional[str] = None
-    run_count: int = 0
-    retry_count: int = 0
-    execution_time: Optional[float] = None
-
-    def to_dict(self):
-        return {
-            **asdict(self),
-            "timestamp_readable": datetime.fromtimestamp(self.timestamp).strftime(
-                "%Y-%m-%d %H:%M:%S"
-            ),
-        }
-
-
 class FastScheduler:
     """
-    FastScheduler - Simple, powerful, persistent task scheduler with async support
+    FastScheduler - Simple, powerful, persistent task scheduler with async support.
 
     Args:
-        state_file: Path to the JSON file for persisting scheduler state
+        state_file: Path to the JSON file for persisting scheduler state (used with JSON backend)
+        storage: Storage backend - "json" (default), "sqlmodel", or a StorageBackend instance
+        database_url: Database URL for SQLModel backend (e.g., "sqlite:///scheduler.db",
+            "postgresql://user:pass@host/db", "mysql://user:pass@host/db")
         auto_start: If True, start the scheduler immediately
         quiet: If True, suppress most log messages
         max_history: Maximum number of history entries to keep (default: 10000)
         max_workers: Maximum number of worker threads for job execution (default: 10)
         history_retention_days: Maximum age of history entries in days (default: 7)
         max_dead_letters: Maximum number of failed job entries to keep in dead letter queue (default: 500)
+
+    Examples:
+        # JSON storage (default, backward compatible)
+        scheduler = FastScheduler(state_file="scheduler.json")
+
+        # SQLite database
+        scheduler = FastScheduler(
+            storage="sqlmodel",
+            database_url="sqlite:///scheduler.db"
+        )
+
+        # PostgreSQL database
+        scheduler = FastScheduler(
+            storage="sqlmodel",
+            database_url="postgresql://user:pass@localhost/mydb"
+        )
+
+        # Custom storage backend
+        scheduler = FastScheduler(storage=MyCustomStorageBackend())
     """
 
     def __init__(
         self,
         state_file: str = "fastscheduler_state.json",
+        storage: Optional[Union[str, "StorageBackend"]] = None,
+        database_url: Optional[str] = None,
         auto_start: bool = False,
         quiet: bool = False,
         max_history: int = 10000,
@@ -165,21 +87,23 @@ class FastScheduler:
         history_retention_days: int = 7,
         max_dead_letters: int = 500,
     ):
+        self._storage = self._init_storage(storage, state_file, database_url, quiet)
         self.state_file = Path(state_file)
+
         self.jobs: List[Job] = []
         self.job_registry: Dict[str, Callable] = {}
         self.running = False
         self.thread: Optional[threading.Thread] = None
-        self.lock = threading.RLock()  # Use RLock for re-entrant locking
+        self.lock = threading.RLock()
         self._job_counter: Iterator[int] = itertools.count()
-        self._job_counter_value = 0  # Track last value for persistence
+        self._job_counter_value = 0
         self.history: List[JobHistory] = []
         self.max_history = max_history
         self.max_workers = max_workers
         self.history_retention_days = history_retention_days
         self.max_dead_letters = max_dead_letters
-        self.quiet = quiet  # Quiet mode for less verbose output
-        self._running_jobs: set = set()  # Track currently executing jobs
+        self.quiet = quiet
+        self._running_jobs: set = set()
         self._executor = ThreadPoolExecutor(
             max_workers=max_workers, thread_name_prefix="FastScheduler-Worker"
         )
@@ -187,13 +111,11 @@ class FastScheduler:
             max_workers=1, thread_name_prefix="FastScheduler-Saver"
         )
 
-        # Dead letter queue - stores failed job executions
         self.dead_letters: List[JobHistory] = []
         self._dead_letters_file = Path(
             str(self.state_file).replace(".json", "_dead_letters.json")
         )
 
-        # Statistics
         self.stats = {
             "total_runs": 0,
             "total_failures": 0,
@@ -201,35 +123,62 @@ class FastScheduler:
             "start_time": None,
         }
 
-        # Load previous state
         self._load_state()
         self._load_dead_letters()
 
         if auto_start:
             self.start()
 
+    def _init_storage(
+        self,
+        storage: Optional[Union[str, "StorageBackend"]],
+        state_file: str,
+        database_url: Optional[str],
+        quiet: bool,
+    ) -> "StorageBackend":
+        """Initialize the storage backend."""
+        from .storage import JSONStorageBackend, StorageBackend
+
+        if isinstance(storage, StorageBackend):
+            return storage
+
+        if storage is None or storage == "json":
+            return JSONStorageBackend(state_file=state_file, quiet=quiet)
+
+        if storage == "sqlmodel":
+            from .storage import get_sqlmodel_backend
+
+            SQLModelStorageBackend = get_sqlmodel_backend()
+            url = database_url or "sqlite:///fastscheduler.db"
+            return SQLModelStorageBackend(database_url=url, quiet=quiet)
+
+        raise ValueError(
+            f"Unknown storage backend: {storage}. "
+            "Use 'json', 'sqlmodel', or provide a StorageBackend instance."
+        )
+
     # ==================== User-Friendly Scheduling API ====================
 
-    def every(self, interval: Union[int, float]) -> "IntervalScheduler":
-        """Schedule a task to run every X seconds/minutes/hours/days"""
+    def every(self, interval: Union[int, float]) -> IntervalScheduler:
+        """Schedule a task to run every X seconds/minutes/hours/days."""
         return IntervalScheduler(self, interval)
 
     @property
-    def daily(self) -> "DailyScheduler":
-        """Schedule a task to run daily at a specific time"""
+    def daily(self) -> DailyScheduler:
+        """Schedule a task to run daily at a specific time."""
         return DailyScheduler(self)
 
     @property
-    def weekly(self) -> "WeeklyScheduler":
-        """Schedule a task to run weekly on specific days"""
+    def weekly(self) -> WeeklyScheduler:
+        """Schedule a task to run weekly on specific days."""
         return WeeklyScheduler(self)
 
     @property
-    def hourly(self) -> "HourlyScheduler":
-        """Schedule a task to run hourly at a specific minute"""
+    def hourly(self) -> HourlyScheduler:
+        """Schedule a task to run hourly at a specific minute."""
         return HourlyScheduler(self)
 
-    def cron(self, expression: str) -> "CronScheduler":
+    def cron(self, expression: str) -> CronScheduler:
         """
         Schedule a task using a cron expression.
 
@@ -254,14 +203,14 @@ class FastScheduler:
             )
         return CronScheduler(self, expression)
 
-    def once(self, delay: Union[int, float]) -> "OnceScheduler":
-        """Schedule a one-time task"""
+    def once(self, delay: Union[int, float]) -> OnceScheduler:
+        """Schedule a one-time task."""
         scheduler = OnceScheduler(self, delay)
         scheduler._decorator_mode = True
         return scheduler
 
-    def at(self, target_time: Union[datetime, str]) -> "OnceScheduler":
-        """Schedule a task at a specific datetime"""
+    def at(self, target_time: Union[datetime, str]) -> OnceScheduler:
+        """Schedule a task at a specific datetime."""
         if isinstance(target_time, str):
             target_time = datetime.strptime(target_time, "%Y-%m-%d %H:%M:%S")
 
@@ -276,16 +225,16 @@ class FastScheduler:
     # ==================== Internal Methods ====================
 
     def _register_function(self, func: Callable):
-        """Register a function for persistence"""
+        """Register a function for persistence."""
         self.job_registry[f"{func.__module__}.{func.__name__}"] = func
 
     def _next_job_id(self) -> str:
-        """Generate next job ID (thread-safe)"""
+        """Generate next job ID (thread-safe)."""
         self._job_counter_value = next(self._job_counter)
         return f"job_{self._job_counter_value}"
 
     def _add_job(self, job: Job):
-        """Add job to the priority queue"""
+        """Add job to the priority queue."""
         with self.lock:
             if any(j.job_id == job.job_id for j in self.jobs):
                 logger.warning(f"Job {job.job_id} already exists, skipping")
@@ -298,7 +247,6 @@ class FastScheduler:
             if not self.quiet:
                 logger.info(f"Scheduled: {job.func_name} - {schedule_desc}")
 
-        # Save state asynchronously
         self._save_state_async()
 
     def _log_history(
@@ -311,7 +259,7 @@ class FastScheduler:
         retry_count: int = 0,
         execution_time: Optional[float] = None,
     ):
-        """Log job events to history"""
+        """Log job events to history."""
         history_entry = JobHistory(
             job_id=job_id,
             func_name=func_name,
@@ -325,34 +273,25 @@ class FastScheduler:
 
         with self.lock:
             self.history.append(history_entry)
-            # Apply both count and time-based limits
             self._cleanup_history()
 
-            # Add failed entries to dead letter queue
-            # Include: final failures (Max retries) and any failed entries with errors
             if status == JobStatus.FAILED and error:
                 self.dead_letters.append(history_entry)
-                # Enforce dead letter queue limit
                 if len(self.dead_letters) > self.max_dead_letters:
                     self.dead_letters = self.dead_letters[-self.max_dead_letters :]
                 self._save_dead_letters_async()
 
     def _cleanup_history(self):
-        """Clean up old history entries based on count and age limits.
-
-        Must be called with self.lock held.
-        """
-        # Remove entries older than retention period
+        """Clean up old history entries based on count and age limits."""
         if self.history_retention_days > 0:
             cutoff_time = time.time() - (self.history_retention_days * 86400)
             self.history = [h for h in self.history if h.timestamp >= cutoff_time]
 
-        # Also enforce max count limit
         if len(self.history) > self.max_history:
             self.history = self.history[-self.max_history :]
 
     def start(self):
-        """Start the scheduler"""
+        """Start the scheduler."""
         if self.running:
             logger.warning("Scheduler already running")
             return
@@ -362,10 +301,9 @@ class FastScheduler:
 
         self._handle_missed_jobs()
 
-        # Start in daemon thread so it doesn't block
         self.thread = threading.Thread(
             target=self._run,
-            daemon=True,  # Daemon thread won't block program exit
+            daemon=True,
             name="FastScheduler-Main",
         )
         self.thread.start()
@@ -375,7 +313,7 @@ class FastScheduler:
         self._save_state_async()
 
     def stop(self, wait: bool = True, timeout: int = 30):
-        """Stop the scheduler gracefully"""
+        """Stop the scheduler gracefully."""
         if not self.running:
             return
 
@@ -385,7 +323,6 @@ class FastScheduler:
         if wait and self.thread and self.thread.is_alive():
             self.thread.join(timeout=timeout)
 
-        # Shutdown executors
         if wait:
             self._executor.shutdown(wait=True, cancel_futures=False)
             self._save_executor.shutdown(wait=True)
@@ -394,11 +331,13 @@ class FastScheduler:
             self._save_executor.shutdown(wait=False)
 
         self._save_state()
+        self._storage.close()
+
         if not self.quiet:
             logger.info("FastScheduler stopped")
 
     def _handle_missed_jobs(self):
-        """Handle jobs that should have run while scheduler was stopped"""
+        """Handle jobs that should have run while scheduler was stopped."""
         now = time.time()
 
         with self.lock:
@@ -426,8 +365,7 @@ class FastScheduler:
                     job.next_run = now
 
     def _calculate_next_run(self, job: Job):
-        """Calculate next run time for time-based schedules"""
-        # Get timezone-aware datetime if timezone is specified
+        """Calculate next run time for time-based schedules."""
         if job.timezone:
             tz = ZoneInfo(job.timezone)
             now = datetime.now(tz)
@@ -436,7 +374,6 @@ class FastScheduler:
             tz = None
 
         if job.schedule_type == "cron" and job.cron_expression and CRONITER_AVAILABLE:
-            # Use croniter for cron expressions
             base_time = now if tz else datetime.now()
             cron = croniter(job.cron_expression, base_time)
             next_run = cron.get_next(datetime)
@@ -474,7 +411,7 @@ class FastScheduler:
             job.next_run = next_run.timestamp()
 
     def _run(self):
-        """Main scheduler loop - runs in background thread"""
+        """Main scheduler loop - runs in background thread."""
         if not self.quiet:
             logger.info("Scheduler main loop started")
 
@@ -483,21 +420,17 @@ class FastScheduler:
                 now = time.time()
                 jobs_to_run = []
 
-                # Collect jobs to run (minimize lock time)
                 with self.lock:
                     while self.jobs and self.jobs[0].next_run <= now:
                         job = heapq.heappop(self.jobs)
 
-                        # Skip paused jobs but keep them in queue
                         if job.paused:
-                            # Reschedule to check again later
-                            job.next_run = time.time() + 1.0  # Check again in 1 second
+                            job.next_run = time.time() + 1.0
                             heapq.heappush(self.jobs, job)
                             continue
 
                         jobs_to_run.append(job)
 
-                        # Reschedule if recurring
                         if job.repeat:
                             if job.schedule_type in [
                                 "daily",
@@ -513,27 +446,24 @@ class FastScheduler:
                             job.retry_count = 0
                             heapq.heappush(self.jobs, job)
 
-                # Execute jobs outside of lock
                 for job in jobs_to_run:
                     self._executor.submit(self._execute_job, job)
 
-                # Sleep to avoid busy-waiting
                 time.sleep(0.1)
 
             except Exception as e:
                 logger.error(f"Error in main loop: {e}\n{traceback.format_exc()}")
-                time.sleep(1)  # Sleep on error to prevent tight loop
+                time.sleep(1)
 
         if not self.quiet:
             logger.info("Scheduler main loop stopped")
 
     def _execute_job(self, job: Job):
-        """Execute a job with retries"""
+        """Execute a job with retries."""
         if job.func is None:
             logger.error(f"Job {job.func_name} has no function, skipping")
             return
 
-        # Mark job as running
         with self.lock:
             self._running_jobs.add(job.job_id)
 
@@ -552,9 +482,7 @@ class FastScheduler:
         start_time = time.time()
 
         try:
-            # Check if function is async
             if asyncio.iscoroutinefunction(job.func):
-                # Run async function with optional timeout
                 if job.timeout:
                     asyncio.run(
                         asyncio.wait_for(
@@ -564,9 +492,7 @@ class FastScheduler:
                 else:
                     asyncio.run(job.func(*job.args, **job.kwargs))
             else:
-                # Run sync function with optional timeout
                 if job.timeout:
-                    from concurrent.futures import ThreadPoolExecutor
                     from concurrent.futures import TimeoutError as FuturesTimeoutError
 
                     with ThreadPoolExecutor(max_workers=1) as executor:
@@ -580,8 +506,6 @@ class FastScheduler:
 
             execution_time = time.time() - start_time
 
-            # For recurring jobs, status should be SCHEDULED (already rescheduled)
-            # For one-time jobs, status should be COMPLETED
             if job.repeat:
                 job.status = JobStatus.SCHEDULED
             else:
@@ -621,7 +545,8 @@ class FastScheduler:
 
                 if not self.quiet:
                     logger.warning(
-                        f"{job.func_name} failed, retrying in {retry_delay}s ({job.retry_count}/{job.max_retries})"
+                        f"{job.func_name} failed, retrying in {retry_delay}s "
+                        f"({job.retry_count}/{job.max_retries})"
                     )
 
                 self._log_history(
@@ -651,52 +576,42 @@ class FastScheduler:
                 )
 
         finally:
-            # Mark job as no longer running
             with self.lock:
                 self._running_jobs.discard(job.job_id)
             self._save_state_async()
 
     def _save_state_async(self):
-        """Save state asynchronously to avoid blocking"""
+        """Save state asynchronously to avoid blocking."""
         try:
             self._save_executor.submit(self._save_state)
         except Exception as e:
             logger.error(f"Failed to queue state save: {e}")
 
     def _save_state(self):
-        """Save state to disk"""
+        """Save state using storage backend."""
         try:
-            state = {
-                "version": "1.0",
-                "metadata": {
-                    "last_save": time.time(),
-                    "last_save_readable": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                    "scheduler_running": self.running,
-                },
-                "jobs": [job.to_dict() for job in self.jobs],
-                "history": [h.to_dict() for h in self.history[-1000:]],
-                "statistics": self.stats,
-                "_job_counter": self._job_counter_value,
-            }
+            with self.lock:
+                jobs = [job.to_dict() for job in self.jobs]
+                history = [h.to_dict() for h in self.history[-1000:]]
 
-            temp_file = self.state_file.with_suffix(".tmp")
-            with open(temp_file, "w") as f:
-                json.dump(state, f, indent=2)
-            temp_file.replace(self.state_file)
+            self._storage.save_state(
+                jobs=jobs,
+                history=history,
+                statistics=self.stats,
+                job_counter=self._job_counter_value,
+                scheduler_running=self.running,
+            )
 
         except Exception as e:
             logger.error(f"Failed to save state: {e}")
 
     def _load_state(self):
-        """Load state from disk"""
-        if not self.state_file.exists():
-            if not self.quiet:
-                logger.info("No previous state found, starting fresh")
-            return
-
+        """Load state using storage backend."""
         try:
-            with open(self.state_file, "r") as f:
-                state = json.load(f)
+            state = self._storage.load_state()
+
+            if state is None:
+                return
 
             self._job_counter_value = state.get("_job_counter", 0)
             self._job_counter = itertools.count(self._job_counter_value)
@@ -706,7 +621,6 @@ class FastScheduler:
                 for h in state.get("history", [])
             ]
 
-            # Clean up old history entries on load
             with self.lock:
                 self._cleanup_history()
 
@@ -753,20 +667,15 @@ class FastScheduler:
             logger.error(f"Failed to load state: {e}")
 
     def _load_dead_letters(self):
-        """Load dead letter queue from disk"""
-        if not self._dead_letters_file.exists():
-            return
-
+        """Load dead letter queue using storage backend."""
         try:
-            with open(self._dead_letters_file, "r") as f:
-                data = json.load(f)
+            dead_letter_dicts = self._storage.load_dead_letters()
 
             self.dead_letters = [
                 JobHistory(**{k: v for k, v in h.items() if k != "timestamp_readable"})
-                for h in data.get("dead_letters", [])
+                for h in dead_letter_dicts
             ]
 
-            # Enforce limit
             if len(self.dead_letters) > self.max_dead_letters:
                 self.dead_letters = self.dead_letters[-self.max_dead_letters :]
 
@@ -777,45 +686,30 @@ class FastScheduler:
             logger.error(f"Failed to load dead letters: {e}")
 
     def _save_dead_letters_async(self):
-        """Save dead letters asynchronously"""
+        """Save dead letters asynchronously."""
         try:
             self._save_executor.submit(self._save_dead_letters)
         except Exception as e:
             logger.error(f"Failed to queue dead letters save: {e}")
 
     def _save_dead_letters(self):
-        """Save dead letter queue to disk"""
+        """Save dead letter queue using storage backend."""
         try:
             with self.lock:
-                data = {
-                    "dead_letters": [dl.to_dict() for dl in self.dead_letters],
-                    "max_dead_letters": self.max_dead_letters,
-                }
+                dead_letters = [dl.to_dict() for dl in self.dead_letters]
 
-            with open(self._dead_letters_file, "w") as f:
-                json.dump(data, f, indent=2)
+            self._storage.save_dead_letters(dead_letters, self.max_dead_letters)
 
         except Exception as e:
             logger.error(f"Failed to save dead letters: {e}")
 
     def get_dead_letters(self, limit: int = 100) -> List[Dict]:
-        """Get dead letter queue entries (failed jobs)
-
-        Args:
-            limit: Maximum number of entries to return
-
-        Returns:
-            List of failed job history entries, most recent first
-        """
+        """Get dead letter queue entries (failed jobs)."""
         with self.lock:
             return [dl.to_dict() for dl in self.dead_letters[-limit:][::-1]]
 
     def clear_dead_letters(self) -> int:
-        """Clear all dead letter entries
-
-        Returns:
-            Number of entries cleared
-        """
+        """Clear all dead letter entries."""
         with self.lock:
             count = len(self.dead_letters)
             self.dead_letters = []
@@ -825,7 +719,7 @@ class FastScheduler:
     # ==================== Monitoring & Management ====================
 
     def get_jobs(self) -> List[Dict]:
-        """Get all scheduled jobs"""
+        """Get all scheduled jobs."""
         with self.lock:
             return [
                 {
@@ -858,7 +752,7 @@ class FastScheduler:
     def get_history(
         self, func_name: Optional[str] = None, limit: int = 50
     ) -> List[Dict]:
-        """Get job history"""
+        """Get job history."""
         with self.lock:
             history = (
                 self.history
@@ -868,7 +762,7 @@ class FastScheduler:
             return [h.to_dict() for h in history[-limit:]]
 
     def get_statistics(self) -> Dict:
-        """Get statistics"""
+        """Get statistics."""
         with self.lock:
             stats = self.stats.copy()
 
@@ -893,15 +787,7 @@ class FastScheduler:
             return stats
 
     def cancel_job(self, job_id: str) -> bool:
-        """
-        Cancel and remove a scheduled job by ID.
-
-        Args:
-            job_id: The job ID to cancel (e.g., "job_0")
-
-        Returns:
-            True if job was found and cancelled, False otherwise
-        """
+        """Cancel and remove a scheduled job by ID."""
         with self.lock:
             for i, job in enumerate(self.jobs):
                 if job.job_id == job_id:
@@ -915,15 +801,7 @@ class FastScheduler:
         return False
 
     def cancel_job_by_name(self, func_name: str) -> int:
-        """
-        Cancel all jobs with the given function name.
-
-        Args:
-            func_name: The function name to cancel
-
-        Returns:
-            Number of jobs cancelled
-        """
+        """Cancel all jobs with the given function name."""
         with self.lock:
             cancelled = 0
             jobs_to_keep = []
@@ -944,57 +822,45 @@ class FastScheduler:
             return cancelled
 
     def pause_job(self, job_id: str) -> bool:
-        """
-        Pause a job (it will remain in the queue but won't execute).
-
-        Args:
-            job_id: The job ID to pause
-
-        Returns:
-            True if job was found and paused, False otherwise
-        """
+        """Pause a job (it will remain in the queue but won't execute)."""
         with self.lock:
             for job in self.jobs:
                 if job.job_id == job_id:
                     job.paused = True
                     if not self.quiet:
                         logger.info(f"Paused job: {job.func_name} ({job_id})")
-                    # Save state synchronously to ensure SSE picks up the change immediately
                     self._save_state()
                     return True
         return False
 
     def resume_job(self, job_id: str) -> bool:
-        """
-        Resume a paused job.
-
-        Args:
-            job_id: The job ID to resume
-
-        Returns:
-            True if job was found and resumed, False otherwise
-        """
+        """Resume a paused job."""
         with self.lock:
             for job in self.jobs:
                 if job.job_id == job_id:
                     job.paused = False
                     if not self.quiet:
                         logger.info(f"Resumed job: {job.func_name} ({job_id})")
-                    # Save state synchronously to ensure SSE picks up the change immediately
                     self._save_state()
                     return True
         return False
 
+    def run_job_now(self, job_id: str) -> bool:
+        """Trigger immediate execution of a job (useful for debugging)."""
+        with self.lock:
+            for job in self.jobs:
+                if job.job_id == job_id:
+                    if job.job_id in self._running_jobs:
+                        logger.warning(f"Job {job_id} is already running")
+                        return False
+                    if not self.quiet:
+                        logger.info(f"Manually triggered: {job.func_name} ({job_id})")
+                    self._executor.submit(self._execute_job, job)
+                    return True
+        return False
+
     def get_job(self, job_id: str) -> Optional[Dict]:
-        """
-        Get a specific job by ID.
-
-        Args:
-            job_id: The job ID to retrieve
-
-        Returns:
-            Job info dict or None if not found
-        """
+        """Get a specific job by ID."""
         with self.lock:
             for job in self.jobs:
                 if job.job_id == job_id:
@@ -1026,7 +892,7 @@ class FastScheduler:
         return None
 
     def print_status(self):
-        """Print simple status"""
+        """Print simple status."""
         status = "RUNNING" if self.running else "STOPPED"
         stats = self.get_statistics()
         jobs = self.get_jobs()
@@ -1074,601 +940,3 @@ class FastScheduler:
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         self.stop(wait=True)
-
-
-# ==================== Schedulers ====================
-
-
-class IntervalScheduler:
-    def __init__(self, scheduler: FastScheduler, interval: float):
-        self.scheduler = scheduler
-        self.interval = interval
-        self._max_retries = 3
-        self._catch_up = True
-        self._timeout: Optional[float] = None
-
-    @property
-    def seconds(self):
-        return self
-
-    @property
-    def minutes(self):
-        self.interval *= 60
-        return self
-
-    @property
-    def hours(self):
-        self.interval *= 3600
-        return self
-
-    @property
-    def days(self):
-        self.interval *= 86400
-        return self
-
-    def retries(self, max_retries: int):
-        self._max_retries = max_retries
-        return self
-
-    def no_catch_up(self):
-        self._catch_up = False
-        return self
-
-    def timeout(self, seconds: float):
-        """Set maximum execution time for this job (kills job if exceeded)"""
-        self._timeout = seconds
-        return self
-
-    def do(self, func: Callable, *args, **kwargs):
-        self.scheduler._register_function(func)
-
-        job = Job(
-            next_run=time.time() + self.interval,
-            func=func,
-            func_name=func.__name__,
-            func_module=func.__module__,
-            interval=self.interval,
-            job_id=self.scheduler._next_job_id(),
-            args=args,
-            kwargs=kwargs,
-            repeat=True,
-            max_retries=self._max_retries,
-            catch_up=self._catch_up,
-            schedule_type="interval",
-            timeout=self._timeout,
-        )
-        self.scheduler._add_job(job)
-        return func
-
-    def __call__(self, func: Callable):
-        return self.do(func)
-
-
-class DailyScheduler:
-    def __init__(self, scheduler: FastScheduler):
-        self.scheduler = scheduler
-        self._max_retries = 3
-        self._timeout: Optional[float] = None
-        self._timezone: Optional[str] = None
-
-    def at(self, time_str: str, tz: Optional[str] = None):
-        """
-        Schedule daily at a specific time.
-
-        Args:
-            time_str: Time in HH:MM format (24-hour)
-            tz: Optional timezone (e.g., "America/New_York", "Europe/London")
-        """
-        timezone = tz or self._timezone
-        return DailyAtScheduler(
-            self.scheduler, time_str, self._max_retries, self._timeout, timezone
-        )
-
-    def retries(self, max_retries: int):
-        self._max_retries = max_retries
-        return self
-
-    def timeout(self, seconds: float):
-        """Set maximum execution time for this job (kills job if exceeded)"""
-        self._timeout = seconds
-        return self
-
-    def tz(self, timezone: str):
-        """Set timezone for this schedule"""
-        self._timezone = timezone
-        return self
-
-
-class DailyAtScheduler:
-    def __init__(
-        self,
-        scheduler: FastScheduler,
-        time_str: str,
-        max_retries: int,
-        timeout: Optional[float] = None,
-        timezone: Optional[str] = None,
-    ):
-        self.scheduler = scheduler
-        self.time_str = time_str
-        self._max_retries = max_retries
-        self._timeout = timeout
-        self._timezone = timezone
-
-        if not re.match(r"^\d{2}:\d{2}$", time_str):
-            raise ValueError("Time must be in HH:MM format (24-hour)")
-
-    def timeout(self, seconds: float):
-        """Set maximum execution time for this job (kills job if exceeded)"""
-        self._timeout = seconds
-        return self
-
-    def tz(self, timezone: str):
-        """Set timezone for this schedule"""
-        self._timezone = timezone
-        return self
-
-    def __call__(self, func: Callable):
-        self.scheduler._register_function(func)
-
-        # Handle timezone-aware scheduling
-        if self._timezone:
-            tz = ZoneInfo(self._timezone)
-            now = datetime.now(tz)
-        else:
-            now = datetime.now()
-
-        hour, minute = map(int, self.time_str.split(":"))
-        next_run = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
-        if next_run <= now:
-            next_run += timedelta(days=1)
-
-        job = Job(
-            next_run=next_run.timestamp(),
-            func=func,
-            func_name=func.__name__,
-            func_module=func.__module__,
-            job_id=self.scheduler._next_job_id(),
-            repeat=True,
-            max_retries=self._max_retries,
-            schedule_type="daily",
-            schedule_time=self.time_str,
-            timeout=self._timeout,
-            timezone=self._timezone,
-        )
-        self.scheduler._add_job(job)
-        return func
-
-
-class WeeklyScheduler:
-    def __init__(self, scheduler: FastScheduler):
-        self.scheduler = scheduler
-        self._days: List[int] = []
-        self._max_retries = 3
-        self._timeout: Optional[float] = None
-        self._timezone: Optional[str] = None
-
-    @property
-    def monday(self):
-        self._days = [0]
-        return self
-
-    @property
-    def tuesday(self):
-        self._days = [1]
-        return self
-
-    @property
-    def wednesday(self):
-        self._days = [2]
-        return self
-
-    @property
-    def thursday(self):
-        self._days = [3]
-        return self
-
-    @property
-    def friday(self):
-        self._days = [4]
-        return self
-
-    @property
-    def saturday(self):
-        self._days = [5]
-        return self
-
-    @property
-    def sunday(self):
-        self._days = [6]
-        return self
-
-    @property
-    def weekdays(self):
-        self._days = [0, 1, 2, 3, 4]
-        return self
-
-    @property
-    def weekends(self):
-        self._days = [5, 6]
-        return self
-
-    def on(self, days: List[int]):
-        self._days = days
-        return self
-
-    def at(self, time_str: str, tz: Optional[str] = None):
-        """
-        Schedule weekly at a specific time.
-
-        Args:
-            time_str: Time in HH:MM format (24-hour)
-            tz: Optional timezone (e.g., "America/New_York", "Europe/London")
-        """
-        if not self._days:
-            raise ValueError("Must specify days before time")
-        timezone = tz or self._timezone
-        return WeeklyAtScheduler(
-            self.scheduler,
-            self._days,
-            time_str,
-            self._max_retries,
-            self._timeout,
-            timezone,
-        )
-
-    def retries(self, max_retries: int):
-        self._max_retries = max_retries
-        return self
-
-    def timeout(self, seconds: float):
-        """Set maximum execution time for this job (kills job if exceeded)"""
-        self._timeout = seconds
-        return self
-
-    def tz(self, timezone: str):
-        """Set timezone for this schedule"""
-        self._timezone = timezone
-        return self
-
-
-class WeeklyAtScheduler:
-    def __init__(
-        self,
-        scheduler: FastScheduler,
-        days: List[int],
-        time_str: str,
-        max_retries: int,
-        timeout: Optional[float] = None,
-        timezone: Optional[str] = None,
-    ):
-        self.scheduler = scheduler
-        self.days = days
-        self.time_str = time_str
-        self._max_retries = max_retries
-        self._timeout = timeout
-        self._timezone = timezone
-
-        if not re.match(r"^\d{2}:\d{2}$", time_str):
-            raise ValueError("Time must be in HH:MM format")
-
-    def timeout(self, seconds: float):
-        """Set maximum execution time for this job (kills job if exceeded)"""
-        self._timeout = seconds
-        return self
-
-    def tz(self, timezone: str):
-        """Set timezone for this schedule"""
-        self._timezone = timezone
-        return self
-
-    def __call__(self, func: Callable):
-        self.scheduler._register_function(func)
-
-        # Handle timezone-aware scheduling
-        if self._timezone:
-            tz = ZoneInfo(self._timezone)
-            now = datetime.now(tz)
-        else:
-            now = datetime.now()
-
-        hour, minute = map(int, self.time_str.split(":"))
-
-        next_run = None
-        for i in range(8):
-            check_date = now + timedelta(days=i)
-            if check_date.weekday() in self.days:
-                candidate = check_date.replace(
-                    hour=hour, minute=minute, second=0, microsecond=0
-                )
-                if candidate > now:
-                    next_run = candidate
-                    break
-
-        if not next_run:
-            next_run = now + timedelta(days=7)
-
-        job = Job(
-            next_run=next_run.timestamp(),
-            func=func,
-            func_name=func.__name__,
-            func_module=func.__module__,
-            job_id=self.scheduler._next_job_id(),
-            repeat=True,
-            max_retries=self._max_retries,
-            schedule_type="weekly",
-            schedule_time=self.time_str,
-            schedule_days=self.days,
-            timeout=self._timeout,
-            timezone=self._timezone,
-        )
-        self.scheduler._add_job(job)
-        return func
-
-
-class HourlyScheduler:
-    def __init__(self, scheduler: FastScheduler):
-        self.scheduler = scheduler
-        self._max_retries = 3
-        self._timeout: Optional[float] = None
-        self._timezone: Optional[str] = None
-
-    def at(self, minute_str: str, tz: Optional[str] = None):
-        """
-        Schedule hourly at a specific minute.
-
-        Args:
-            minute_str: Minute in :MM format
-            tz: Optional timezone (e.g., "America/New_York", "Europe/London")
-        """
-        timezone = tz or self._timezone
-        return HourlyAtScheduler(
-            self.scheduler, minute_str, self._max_retries, self._timeout, timezone
-        )
-
-    def retries(self, max_retries: int):
-        self._max_retries = max_retries
-        return self
-
-    def timeout(self, seconds: float):
-        """Set maximum execution time for this job (kills job if exceeded)"""
-        self._timeout = seconds
-        return self
-
-    def tz(self, timezone: str):
-        """Set timezone for this schedule"""
-        self._timezone = timezone
-        return self
-
-
-class HourlyAtScheduler:
-    def __init__(
-        self,
-        scheduler: FastScheduler,
-        minute_str: str,
-        max_retries: int,
-        timeout: Optional[float] = None,
-        timezone: Optional[str] = None,
-    ):
-        self.scheduler = scheduler
-        self.minute_str = minute_str
-        self._max_retries = max_retries
-        self._timeout = timeout
-        self._timezone = timezone
-
-        if not re.match(r"^:\d{2}$", minute_str):
-            raise ValueError("Minute must be in :MM format")
-
-    def timeout(self, seconds: float):
-        """Set maximum execution time for this job (kills job if exceeded)"""
-        self._timeout = seconds
-        return self
-
-    def tz(self, timezone: str):
-        """Set timezone for this schedule"""
-        self._timezone = timezone
-        return self
-
-    def __call__(self, func: Callable):
-        self.scheduler._register_function(func)
-
-        # Handle timezone-aware scheduling
-        if self._timezone:
-            tz = ZoneInfo(self._timezone)
-            now = datetime.now(tz)
-        else:
-            now = datetime.now()
-
-        minute = int(self.minute_str.strip(":"))
-        next_run = now.replace(minute=minute, second=0, microsecond=0)
-        if next_run <= now:
-            next_run += timedelta(hours=1)
-
-        job = Job(
-            next_run=next_run.timestamp(),
-            func=func,
-            func_name=func.__name__,
-            func_module=func.__module__,
-            job_id=self.scheduler._next_job_id(),
-            interval=3600,
-            repeat=True,
-            max_retries=self._max_retries,
-            schedule_type="hourly",
-            schedule_time=self.minute_str,
-            timeout=self._timeout,
-            timezone=self._timezone,
-        )
-        self.scheduler._add_job(job)
-        return func
-
-
-class OnceScheduler:
-    def __init__(self, scheduler: FastScheduler, delay: float):
-        self.scheduler = scheduler
-        self.delay = delay
-        self._decorator_mode = False
-        self._max_retries = 3
-        self._timeout: Optional[float] = None
-
-    @property
-    def seconds(self):
-        return self
-
-    @property
-    def minutes(self):
-        self.delay *= 60
-        return self
-
-    @property
-    def hours(self):
-        self.delay *= 3600
-        return self
-
-    def retries(self, max_retries: int):
-        self._max_retries = max_retries
-        return self
-
-    def timeout(self, seconds: float):
-        """Set maximum execution time for this job (kills job if exceeded)"""
-        self._timeout = seconds
-        return self
-
-    def do(self, func: Callable, *args, **kwargs):
-        self.scheduler._register_function(func)
-
-        job = Job(
-            next_run=time.time() + self.delay,
-            func=func,
-            func_name=func.__name__,
-            func_module=func.__module__,
-            job_id=self.scheduler._next_job_id(),
-            args=args,
-            kwargs=kwargs,
-            repeat=False,
-            max_retries=self._max_retries,
-            timeout=self._timeout,
-        )
-        self.scheduler._add_job(job)
-
-        if self._decorator_mode:
-            return func
-        return job
-
-    def __call__(self, func: Callable):
-        return self.do(func)
-
-
-class CronScheduler:
-    """
-    Scheduler for cron expressions.
-
-    Requires croniter: pip install fastscheduler[cron]
-
-    Usage:
-        @scheduler.cron("0 9 * * MON-FRI")  # 9 AM on weekdays
-        def market_open():
-            ...
-
-        @scheduler.cron("*/5 * * * *")  # Every 5 minutes
-        def frequent_task():
-            ...
-
-        @scheduler.cron("0 9 * * MON-FRI", tz="America/New_York")
-        def nyc_market_open():
-            ...
-    """
-
-    def __init__(self, scheduler: FastScheduler, expression: str):
-        self.scheduler = scheduler
-        self.expression = expression
-        self._max_retries = 3
-        self._timeout: Optional[float] = None
-        self._timezone: Optional[str] = None
-
-        # Validate cron expression
-        if not CRONITER_AVAILABLE:
-            raise ImportError(
-                "Cron scheduling requires croniter. "
-                "Install with: pip install fastscheduler[cron]"
-            )
-
-        # Validate the expression by attempting to create a croniter
-        try:
-            croniter(expression)
-        except (KeyError, ValueError) as e:
-            raise ValueError(f"Invalid cron expression '{expression}': {e}")
-
-    def retries(self, max_retries: int):
-        """Set maximum retry attempts on failure"""
-        self._max_retries = max_retries
-        return self
-
-    def timeout(self, seconds: float):
-        """Set maximum execution time for this job (kills job if exceeded)"""
-        self._timeout = seconds
-        return self
-
-    def tz(self, timezone: str):
-        """Set timezone for cron schedule evaluation"""
-        self._timezone = timezone
-        return self
-
-    def __call__(self, func: Callable):
-        self.scheduler._register_function(func)
-
-        # Calculate next run time using croniter
-        if self._timezone:
-            tz = ZoneInfo(self._timezone)
-            now = datetime.now(tz)
-        else:
-            now = datetime.now()
-
-        cron = croniter(self.expression, now)
-        next_run = cron.get_next(datetime)
-
-        job = Job(
-            next_run=next_run.timestamp(),
-            func=func,
-            func_name=func.__name__,
-            func_module=func.__module__,
-            job_id=self.scheduler._next_job_id(),
-            repeat=True,
-            max_retries=self._max_retries,
-            schedule_type="cron",
-            cron_expression=self.expression,
-            timeout=self._timeout,
-            timezone=self._timezone,
-        )
-        self.scheduler._add_job(job)
-        return func
-
-    def do(self, func: Callable, *args, **kwargs):
-        """Alternative to decorator syntax for scheduling with arguments"""
-        self.scheduler._register_function(func)
-
-        # Calculate next run time using croniter
-        if self._timezone:
-            tz = ZoneInfo(self._timezone)
-            now = datetime.now(tz)
-        else:
-            now = datetime.now()
-
-        cron = croniter(self.expression, now)
-        next_run = cron.get_next(datetime)
-
-        job = Job(
-            next_run=next_run.timestamp(),
-            func=func,
-            func_name=func.__name__,
-            func_module=func.__module__,
-            job_id=self.scheduler._next_job_id(),
-            args=args,
-            kwargs=kwargs,
-            repeat=True,
-            max_retries=self._max_retries,
-            schedule_type="cron",
-            cron_expression=self.expression,
-            timeout=self._timeout,
-            timezone=self._timezone,
-        )
-        self.scheduler._add_job(job)
-        return func
