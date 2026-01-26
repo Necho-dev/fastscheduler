@@ -269,18 +269,19 @@
             display: flex;
             align-items: center;
             justify-content: center;
-            width: 32px;
-            height: 32px;
-            background: var(--bg-tertiary);
-            border: 1px solid var(--border-subtle);
+            padding: 4px 14px;
             border-radius: 4px;
-            color: var(--text-primary);
-            font-size: 16px;
+            font-size: 12px;
+            font-weight: 500;
+            color: var(--text-secondary);
             cursor: pointer;
+            border: 1px solid var(--border-subtle);
+            background: var(--bg-tertiary);
             transition: all var(--transition-fast);
         }
 
         .theme-toggle:hover {
+            color: var(--text-primary);
             background: var(--bg-elevated);
             border-color: var(--border-default);
         }
@@ -777,10 +778,10 @@
             <div class="navbar-controls">
                 <select id="language-selector" class="control-select" onchange="setLanguage(this.value)">
                     <option value="en">English</option>
-                    <option value="zh">中文</option>
+                    <option value="zh">简体中文</option>
                 </select>
                 <button id="theme-toggle" class="theme-toggle" onclick="toggleTheme()" data-title="toggleTheme">
-                    <span id="theme-icon">🌙</span>
+                    <span id="theme-icon">Light</span>
                 </button>
             </div>
             <div id="scheduler-status" class="status-pill">
@@ -976,6 +977,8 @@
                 successRate: "success",
                 noData: "No data",
                 toggleTheme: "Toggle theme",
+                dark: "Dark",
+                light: "Light",
                 statusScheduled: "Scheduled",
                 statusRunning: "Running",
                 statusPaused: "Paused",
@@ -1046,6 +1049,8 @@
                 successRate: "成功率",
                 noData: "无数据",
                 toggleTheme: "切换主题",
+                dark: "深色",
+                light: "浅色",
                 statusScheduled: "已调度",
                 statusRunning: "运行中",
                 statusPaused: "已暂停",
@@ -1193,6 +1198,7 @@
             // Theme toggle
             const themeToggle = document.getElementById('theme-toggle');
             if (themeToggle) themeToggle.title = t('toggleTheme');
+            updateThemeIcon();
         }
 
         document.addEventListener('DOMContentLoaded', () => {
@@ -1221,7 +1227,11 @@
         function updateThemeIcon() {
             const icon = document.getElementById('theme-icon');
             if (icon) {
-                icon.textContent = currentTheme === 'dark' ? '☀️' : '🌙';
+                if (currentTheme === 'dark') {
+                    icon.textContent = currentLanguage === 'zh' ? '浅色' : 'Light';
+                } else {
+                    icon.textContent = currentLanguage === 'zh' ? '深色' : 'Dark';
+                }
             }
         }
 
