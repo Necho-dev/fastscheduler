@@ -33,11 +33,17 @@ pip install fastscheduler
 # With FastAPI dashboard
 pip install fastscheduler[fastapi]
 
-# With cron expression support
-pip install fastscheduler[cron]
+# With SQLAlchemy database support
+pip install fastscheduler[sqlalchemy]
+
+# With SQLModel database support
+pip install fastscheduler[sqlmodel]
 
 # With database support (SQLite, PostgreSQL, MySQL)
 pip install fastscheduler[database]
+
+# With Redis queue backend
+pip install fastscheduler[redis]
 
 # All features
 pip install fastscheduler[all]
@@ -84,7 +90,7 @@ scheduler.start()
 
 ### Cron Expressions
 
-Requires: `pip install fastscheduler[cron]`
+Cron expression support is included by default. No additional installation required.
 
 ```python
 @scheduler.cron("0 9 * * MON-FRI")        # 9 AM on weekdays
@@ -411,7 +417,7 @@ response = requests.post("http://localhost:8000/scheduler/api/jobs", json={
 
 ##### 5. Cron Scheduling
 
-Run a task using cron expressions (requires `croniter`):
+Run a task using cron expressions:
 
 ```python
 # Every 5 minutes

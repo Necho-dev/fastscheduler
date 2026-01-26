@@ -1,11 +1,14 @@
 [project]
 name = "fastscheduler"
-version = "0.2.0"
+version = "0.3.0"
 description = "Simple, lightweight task scheduler for Python with async support"
 readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "MIT" }
-authors = [{ name = "Michiel Meire", email = "michiel.meire1@gmail.com" }]
+authors = [
+    { name = "Michiel Meire", email = "michiel.meire1@gmail.com" },
+    { name = "Cody Li", email = "coooudyli@gmail.com" },
+]
 keywords = ["scheduler", "cron", "task", "async", "background", "jobs"]
 classifiers = [
     "Development Status :: 4 - Beta",
@@ -21,6 +24,7 @@ classifiers = [
     "Topic :: System :: Systems Administration",
 ]
 dependencies = [
+    "sqlmodel>=0.0.31",
     "sqlalchemy>=2.0.0",
     "croniter (>=6.0.0,<7.0.0)",
 ]
@@ -28,10 +32,11 @@ dependencies = [
 [project.optional-dependencies]
 fastapi = ["fastapi[standard]>=0.100.0"]
 cron = ["croniter>=2.0.0"]
-database = ["sqlalchemy>=2.0.0"]
+sqlmodel = ["sqlmodel>=0.0.31"]
+sqlalchemy = ["sqlalchemy>=2.0.0"]
+database = ["sqlmodel>=0.0.31", "sqlalchemy>=2.0.0"]
 redis = ["redis>=5.0.0"]
-sqlmodel = ["sqlmodel>=0.0.18"]  # Backward compatibility - deprecated
-all = ["fastapi[standard]>=0.100.0", "croniter>=2.0.0", "sqlalchemy>=2.0.0", "redis>=5.0.0"]
+all = ["fastapi[standard]>=0.100.0", "croniter>=2.0.0", "sqlmodel>=0.0.31", "sqlalchemy>=2.0.0", "redis>=5.0.0"]
 
 [project.urls]
 Repository = "https://github.com/MichielMe/fastscheduler"
