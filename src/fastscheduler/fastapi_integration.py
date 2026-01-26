@@ -2,11 +2,12 @@ import asyncio
 import importlib.resources
 import json
 import logging
-from typing import TYPE_CHECKING, AsyncGenerator, Optional
+from typing import TYPE_CHECKING, AsyncGenerator, Optional, List, Dict, Any
 
 try:
-    from fastapi import APIRouter
+    from fastapi import APIRouter, HTTPException, Body
     from fastapi.responses import HTMLResponse, StreamingResponse
+    from pydantic import BaseModel, Field
 except ImportError as e:
     raise ImportError(
         "FastAPI integration requires FastAPI. "
@@ -17,6 +18,37 @@ if TYPE_CHECKING:
     from .main import FastScheduler
 
 logger = logging.getLogger("fastscheduler")
+
+
+# Pydantic models for API requests/responses
+class JobCreateRequest(BaseModel):
+    """Request model for creating a job."""
+
+    func_name: str = Field(..., description="Function name (must be registered)")
+    func_module: str = Field(..., description="Function module (must be registered)")
+    schedule_type: str = Field(
+        ..., description="Schedule type: interval/daily/weekly/hourly/cron/once"
+    )
+    schedule_config: Dict[str, Any] = Field(..., description="Schedule configuration")
+    max_retries: int = Field(default=3, description="Maximum retry attempts")
+    timeout: Optional[float] = Field(default=None, description="Maximum execution time in seconds")
+    timezone: Optional[str] = Field(default=None, description="Timezone string (e.g., 'Asia/Shanghai')")
+    enabled: bool = Field(default=True, description="Whether the job is enabled")
+    args: List[Any] = Field(default_factory=list, description="Function arguments")
+    kwargs: Dict[str, Any] = Field(default_factory=dict, description="Function keyword arguments")
+    group: str = Field(default="default", description="Job group name for business isolation")
+
+
+class JobUpdateRequest(BaseModel):
+    """Request model for updating a job."""
+
+    schedule_config: Optional[Dict[str, Any]] = Field(
+        default=None, description="Updated schedule configuration"
+    )
+    max_retries: Optional[int] = Field(default=None, description="Updated max retries")
+    timeout: Optional[float] = Field(default=None, description="Updated timeout")
+    timezone: Optional[str] = Field(default=None, description="Updated timezone")
+    enabled: Optional[bool] = Field(default=None, description="Whether job is enabled")
 
 
 def _load_dashboard_template() -> str:
@@ -123,9 +155,9 @@ def create_scheduler_routes(scheduler: "FastScheduler", prefix: str = "/schedule
         return {"running": scheduler.running, "statistics": scheduler.get_statistics()}
 
     @router.get("/api/jobs")
-    async def get_jobs():
-        """Get all scheduled jobs"""
-        return {"jobs": scheduler.get_jobs()}
+    async def get_jobs(group: Optional[str] = None):
+        """Get all scheduled jobs, optionally filtered by group"""
+        return {"jobs": scheduler.get_jobs(group=group)}
 
     @router.get("/api/jobs/{job_id}")
     async def get_job(job_id: str):
@@ -185,5 +217,117 @@ def create_scheduler_routes(scheduler: "FastScheduler", prefix: str = "/schedule
         """Clear all dead letter entries"""
         count = scheduler.clear_dead_letters()
         return {"success": True, "cleared": count}
+
+    # ==================== Group Management API ====================
+
+    @router.get("/api/groups")
+    async def get_groups():
+        """Get all job groups"""
+        return {"groups": scheduler.get_groups()}
+
+    @router.get("/api/groups/{group}/jobs")
+    async def get_group_jobs(group: str):
+        """Get all jobs in a specific group"""
+        return {"jobs": scheduler.get_jobs_by_group(group), "group": group}
+
+    @router.post("/api/groups/{group}/pause")
+    async def pause_group_endpoint(group: str):
+        """Pause all jobs in a group"""
+        count = scheduler.pause_group(group)
+        return {"success": True, "paused": count, "message": f"Paused {count} job(s) in group: {group}"}
+
+    @router.post("/api/groups/{group}/resume")
+    async def resume_group_endpoint(group: str):
+        """Resume all paused jobs in a group"""
+        count = scheduler.resume_group(group)
+        return {"success": True, "resumed": count, "message": f"Resumed {count} job(s) in group: {group}"}
+
+    @router.delete("/api/groups/{group}")
+    async def cancel_group_endpoint(group: str):
+        """Cancel all jobs in a group"""
+        count = scheduler.cancel_group(group)
+        return {"success": True, "cancelled": count, "message": f"Cancelled {count} job(s) in group: {group}"}
+
+    # ==================== Task Management API ====================
+
+    @router.post("/api/jobs", status_code=201)
+    async def create_job(request: JobCreateRequest):
+        """Create a new scheduled job"""
+        try:
+            job_id = scheduler.create_job(
+                func_name=request.func_name,
+                func_module=request.func_module,
+                group=request.group,
+                schedule_type=request.schedule_type,
+                schedule_config=request.schedule_config,
+                max_retries=request.max_retries,
+                timeout=request.timeout,
+                timezone=request.timezone,
+                enabled=request.enabled,
+                args=tuple(request.args),
+                kwargs=request.kwargs,
+            )
+
+            if job_id:
+                return {
+                    "success": True,
+                    "message": f"Job created successfully",
+                    "job_id": job_id,
+                }
+            else:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Failed to create job. Make sure function {request.func_module}.{request.func_name} is registered.",
+                )
+        except Exception as e:
+            logger.error(f"Error creating job: {e}", exc_info=True)
+            raise HTTPException(status_code=500, detail=f"Failed to create job: {str(e)}")
+
+    @router.put("/api/jobs/{job_id}")
+    async def update_job(job_id: str, request: JobUpdateRequest):
+        """Update an existing job"""
+        try:
+            success = scheduler.update_job(
+                job_id=job_id,
+                schedule_config=request.schedule_config,
+                max_retries=request.max_retries,
+                timeout=request.timeout,
+                timezone=request.timezone,
+                enabled=request.enabled,
+            )
+
+            if success:
+                return {"success": True, "message": f"Job {job_id} updated successfully"}
+            else:
+                raise HTTPException(status_code=404, detail=f"Job {job_id} not found")
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.error(f"Error updating job: {e}", exc_info=True)
+            raise HTTPException(status_code=500, detail=f"Failed to update job: {str(e)}")
+
+    @router.delete("/api/jobs/{job_id}")
+    async def delete_job(job_id: str):
+        """Delete a job (same as cancel, but clearer semantics)"""
+        success = scheduler.cancel_job(job_id)
+        if success:
+            return {"success": True, "message": f"Job {job_id} deleted successfully"}
+        raise HTTPException(status_code=404, detail=f"Job {job_id} not found")
+
+    @router.post("/api/jobs/{job_id}/enable")
+    async def enable_job(job_id: str):
+        """Enable a job"""
+        success = scheduler.enable_job(job_id)
+        if success:
+            return {"success": True, "message": f"Job {job_id} enabled"}
+        raise HTTPException(status_code=404, detail=f"Job {job_id} not found")
+
+    @router.post("/api/jobs/{job_id}/disable")
+    async def disable_job(job_id: str):
+        """Disable a job"""
+        success = scheduler.disable_job(job_id)
+        if success:
+            return {"success": True, "message": f"Job {job_id} disabled"}
+        raise HTTPException(status_code=404, detail=f"Job {job_id} not found")
 
     return router

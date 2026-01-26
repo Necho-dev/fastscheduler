@@ -2,7 +2,7 @@
 <html lang="en">
 
 <head>
-    <title>FastScheduler</title>
+    <title id="page-title">FastScheduler</title>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -11,7 +11,9 @@
         href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Outfit:wght@400;500;600;700&display=swap"
         rel="stylesheet">
     <style>
-        :root {
+        /* Dark theme (default) */
+        :root[data-theme="dark"],
+        :root:not([data-theme]) {
             --bg-primary: #09090b;
             --bg-secondary: #111113;
             --bg-tertiary: #18181b;
@@ -40,6 +42,39 @@
             --radius-lg: 14px;
             --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
             --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.5);
+            --transition-fast: 150ms cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        /* Light theme */
+        :root[data-theme="light"] {
+            --bg-primary: #ffffff;
+            --bg-secondary: #f5f5f5;
+            --bg-tertiary: #e5e5e5;
+            --bg-elevated: #fafafa;
+            --border-subtle: #e0e0e0;
+            --border-default: #d0d0d0;
+            --text-primary: #1a1a1a;
+            --text-secondary: #4a4a4a;
+            --text-tertiary: #71717a;
+            --accent-primary: #8b5cf6;
+            --accent-secondary: #a78bfa;
+            --status-running: #f59e0b;
+            --status-running-bg: rgba(245, 158, 11, 0.15);
+            --status-scheduled: #3b82f6;
+            --status-scheduled-bg: rgba(59, 130, 246, 0.15);
+            --status-completed: #10b981;
+            --status-completed-bg: rgba(16, 185, 129, 0.15);
+            --status-failed: #ef4444;
+            --status-failed-bg: rgba(239, 68, 68, 0.15);
+            --status-paused: #8b5cf6;
+            --status-paused-bg: rgba(139, 92, 246, 0.15);
+            --font-sans: 'Outfit', -apple-system, BlinkMacSystemFont, sans-serif;
+            --font-mono: 'JetBrains Mono', ui-monospace, monospace;
+            --radius-sm: 6px;
+            --radius-md: 10px;
+            --radius-lg: 14px;
+            --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.1);
+            --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.15);
             --transition-fast: 150ms cubic-bezier(0.4, 0, 0.2, 1);
         }
 
@@ -200,6 +235,54 @@
         .connection-pill.disconnected {
             background: var(--status-failed-bg);
             color: var(--status-failed);
+        }
+
+        /* Language and Theme Controls */
+        .navbar-controls {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .control-select {
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border-subtle);
+            border-radius: 4px;
+            padding: 4px 8px;
+            color: var(--text-primary);
+            font-size: 12px;
+            cursor: pointer;
+            transition: all var(--transition-fast);
+        }
+
+        .control-select:hover {
+            background: var(--bg-elevated);
+            border-color: var(--border-default);
+        }
+
+        .control-select:focus {
+            outline: none;
+            border-color: var(--accent-primary);
+        }
+
+        .theme-toggle {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 32px;
+            height: 32px;
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border-subtle);
+            border-radius: 4px;
+            color: var(--text-primary);
+            font-size: 16px;
+            cursor: pointer;
+            transition: all var(--transition-fast);
+        }
+
+        .theme-toggle:hover {
+            background: var(--bg-elevated);
+            border-color: var(--border-default);
         }
 
         /* Main */
@@ -681,23 +764,32 @@
         <div class="navbar-left">
             <div class="logo">
                 <div class="logo-icon">⚡</div>
-                <span>FastScheduler</span>
+                <span id="logo-text">FastScheduler</span>
             </div>
             <div class="main-tabs">
-                <button class="main-tab active" onclick="switchView('dashboard')">Dashboard</button>
-                <button class="main-tab" onclick="switchView('history')">History</button>
-                <button class="main-tab" onclick="switchView('failed')">Failed <span id="failed-badge" class="tab-badge"
+                <button class="main-tab active" onclick="switchView('dashboard')" id="tab-dashboard"></button>
+                <button class="main-tab" onclick="switchView('history')" id="tab-history"></button>
+                <button class="main-tab" onclick="switchView('failed')" id="tab-failed"><span id="failed-badge" class="tab-badge"
                         style="display: none;">0</span></button>
             </div>
         </div>
         <div class="navbar-right">
+            <div class="navbar-controls">
+                <select id="language-selector" class="control-select" onchange="setLanguage(this.value)">
+                    <option value="en">English</option>
+                    <option value="zh">中文</option>
+                </select>
+                <button id="theme-toggle" class="theme-toggle" onclick="toggleTheme()" data-title="toggleTheme">
+                    <span id="theme-icon">🌙</span>
+                </button>
+            </div>
             <div id="scheduler-status" class="status-pill">
                 <span class="dot"></span>
-                <span>Running</span>
+                <span id="status-text"></span>
             </div>
             <div id="connection-badge" class="connection-pill disconnected">
                 <span class="dot"></span>
-                <span id="connection-text">Connecting</span>
+                <span id="connection-text"></span>
             </div>
         </div>
     </nav>
@@ -707,38 +799,44 @@
         <div id="dashboard-view" class="view active">
             <div class="stats-row">
                 <div class="stat-box">
-                    <div class="stat-label">Active Jobs</div>
+                    <div class="stat-label" id="label-active-jobs"></div>
                     <div class="stat-value" id="stat-jobs">0</div>
                 </div>
                 <div class="stat-box">
-                    <div class="stat-label">Total Runs</div>
+                    <div class="stat-label" id="label-total-runs"></div>
                     <div class="stat-value" id="stat-runs">0</div>
                 </div>
                 <div class="stat-box">
-                    <div class="stat-label">Failures</div>
+                    <div class="stat-label" id="label-failures"></div>
                     <div class="stat-value" id="stat-failures">0</div>
                     <div class="stat-sub" id="stat-rate"></div>
                 </div>
                 <div class="stat-box">
-                    <div class="stat-label">Uptime</div>
+                    <div class="stat-label" id="label-uptime"></div>
                     <div class="stat-value" id="stat-uptime">--</div>
                 </div>
             </div>
 
             <div class="section-box">
                 <div class="section-header">
-                    <div class="section-title">Scheduled Jobs</div>
-                    <div id="jobs-count" style="font-size: 12px; color: var(--text-tertiary);"></div>
+                    <div class="section-title" id="title-scheduled-jobs"></div>
+                    <div style="display: flex; align-items: center; gap: 12px;">
+                        <select class="filter-select" id="jobs-group-filter" style="font-size: 12px; padding: 4px 8px;">
+                            <option value="all" id="opt-all-groups"></option>
+                        </select>
+                        <div id="jobs-count" style="font-size: 12px; color: var(--text-tertiary);"></div>
+                    </div>
                 </div>
                 <table class="jobs-table">
                     <thead>
                         <tr>
-                            <th>Job</th>
-                            <th>Schedule</th>
-                            <th>Status</th>
-                            <th>Last 5 Runs</th>
-                            <th>Next Run</th>
-                            <th>Actions</th>
+                            <th id="th-job"></th>
+                            <th id="th-group"></th>
+                            <th id="th-schedule"></th>
+                            <th id="th-status"></th>
+                            <th id="th-last-runs"></th>
+                            <th id="th-next-run"></th>
+                            <th id="th-actions"></th>
                         </tr>
                     </thead>
                     <tbody id="jobs-tbody"></tbody>
@@ -750,30 +848,30 @@
         <div id="history-view" class="view">
             <div class="section-box">
                 <div class="section-header">
-                    <div class="section-title">Execution History</div>
+                    <div class="section-title" id="title-execution-history"></div>
                 </div>
                 <div class="history-toolbar">
                     <select class="filter-select" id="history-status-filter">
-                        <option value="all">All Statuses</option>
-                        <option value="completed">Completed</option>
-                        <option value="failed">Failed</option>
-                        <option value="missed">Missed</option>
+                        <option value="all" id="opt-all-statuses"></option>
+                        <option value="completed" id="opt-completed"></option>
+                        <option value="failed" id="opt-failed"></option>
+                        <option value="missed" id="opt-missed"></option>
                     </select>
                     <select class="filter-select" id="history-job-filter">
-                        <option value="all">All Jobs</option>
+                        <option value="all" id="opt-all-jobs"></option>
                     </select>
-                    <input type="text" class="search-input" placeholder="Search..." id="history-search">
-                    <div class="history-count" id="history-count">0 entries</div>
+                    <input type="text" class="search-input" id="history-search" data-placeholder="search">
+                    <div class="history-count" id="history-count">0</div>
                 </div>
                 <div class="history-container">
                     <table class="history-table">
                         <thead>
                             <tr>
-                                <th>Status</th>
-                                <th>Job</th>
-                                <th>Time</th>
-                                <th>Duration</th>
-                                <th>Details</th>
+                                <th id="th-history-status"></th>
+                                <th id="th-history-job"></th>
+                                <th id="th-history-time"></th>
+                                <th id="th-history-duration"></th>
+                                <th id="th-history-details"></th>
                             </tr>
                         </thead>
                         <tbody id="history-tbody"></tbody>
@@ -786,28 +884,27 @@
         <div id="failed-view" class="view">
             <div class="section-box">
                 <div class="section-header">
-                    <div class="section-title">Failed Jobs (Dead Letter Queue)</div>
+                    <div class="section-title" id="title-failed-jobs"></div>
                     <button class="action-btn danger" onclick="clearDeadLetters()" id="clear-dead-letters-btn"
-                        style="display: none;">Clear All</button>
+                        style="display: none;"></button>
                 </div>
                 <div class="dead-letter-info">
-                    <p>Jobs that have exhausted all retry attempts are logged here. Use this to diagnose recurring
-                        issues and track job failures.</p>
+                    <p id="failed-jobs-desc"></p>
                 </div>
                 <div class="history-toolbar">
-                    <input type="text" class="search-input" placeholder="Search failed jobs..." id="failed-search">
-                    <div class="history-count" id="failed-count">0 entries</div>
+                    <input type="text" class="search-input" id="failed-search" data-placeholder="searchFailedJobs">
+                    <div class="history-count" id="failed-count">0</div>
                 </div>
                 <div class="history-container">
                     <table class="history-table">
                         <thead>
                             <tr>
-                                <th>Time</th>
-                                <th>Job</th>
-                                <th>Error</th>
-                                <th>Run #</th>
-                                <th>Retries</th>
-                                <th>Duration</th>
+                                <th id="th-failed-time"></th>
+                                <th id="th-failed-job"></th>
+                                <th id="th-failed-error"></th>
+                                <th id="th-failed-run"></th>
+                                <th id="th-failed-retries"></th>
+                                <th id="th-failed-duration"></th>
                             </tr>
                         </thead>
                         <tbody id="failed-tbody"></tbody>
@@ -820,6 +917,150 @@
     <div class="toast-container" id="toast-container"></div>
 
     <script>
+        // Translations
+        const translations = {
+            en: {
+                dashboard: "Dashboard",
+                history: "History",
+                failed: "Failed",
+                running: "Running",
+                stopped: "Stopped",
+                connecting: "Connecting",
+                live: "Live",
+                offline: "Offline",
+                activeJobs: "Active Jobs",
+                totalRuns: "Total Runs",
+                failures: "Failures",
+                uptime: "Uptime",
+                scheduledJobs: "Scheduled Jobs",
+                job: "Job",
+                jobs: "Jobs",
+                schedule: "Schedule",
+                status: "Status",
+                last5Runs: "Last 5 Runs",
+                nextRun: "Next Run",
+                actions: "Actions",
+                pause: "Pause",
+                resume: "Resume",
+                run: "Run",
+                cancel: "Cancel",
+                executionHistory: "Execution History",
+                allStatuses: "All Statuses",
+                completed: "Completed",
+                allJobs: "All Jobs",
+                search: "Search...",
+                entries: "entries",
+                failedJobs: "Failed Jobs (Dead Letter Queue)",
+                failedJobsDesc: "Jobs that have exhausted all retry attempts are logged here. Use this to diagnose recurring issues and track job failures.",
+                searchFailedJobs: "Search failed jobs...",
+                noScheduledJobs: "No scheduled jobs",
+                noHistoryEntries: "No history entries",
+                noFailedJobs: "No failed jobs in dead letter queue",
+                jobPaused: "Job paused",
+                jobResumed: "Job resumed",
+                jobCancelled: "Job cancelled",
+                jobTriggered: "Job triggered",
+                clearedEntries: "Cleared {count} entries",
+                clearAll: "Clear All",
+                confirmCancel: "Cancel this job?",
+                confirmClear: "Clear all failed job entries from the dead letter queue?",
+                duration: "Duration",
+                details: "Details",
+                time: "Time",
+                error: "Error",
+                runNumber: "Run #",
+                retries: "Retries",
+                unknownError: "Unknown error",
+                failedToClear: "Failed to clear",
+                now: "Now",
+                successRate: "success",
+                noData: "No data",
+                toggleTheme: "Toggle theme",
+                statusScheduled: "Scheduled",
+                statusRunning: "Running",
+                statusPaused: "Paused",
+                statusCompleted: "Completed",
+                statusFailed: "Failed",
+                statusMissed: "Missed",
+                group: "Group",
+                allGroups: "All Groups",
+                groupPaused: "Group paused",
+                groupResumed: "Group resumed",
+                groupCancelled: "Group cancelled",
+                confirmCancelGroup: "Cancel all jobs in this group?",
+            },
+            zh: {
+                dashboard: "仪表盘",
+                history: "历史记录",
+                failed: "失败任务",
+                running: "运行中",
+                stopped: "已停止",
+                connecting: "连接中",
+                live: "在线",
+                offline: "离线",
+                activeJobs: "活跃任务",
+                totalRuns: "总执行次数",
+                failures: "失败次数",
+                uptime: "运行时间",
+                scheduledJobs: "已调度任务",
+                job: "任务",
+                jobs: "任务",
+                schedule: "调度计划",
+                status: "状态",
+                last5Runs: "最近5次执行",
+                nextRun: "下次执行",
+                actions: "操作",
+                pause: "暂停",
+                resume: "恢复",
+                run: "立即执行",
+                cancel: "取消",
+                executionHistory: "执行历史",
+                allStatuses: "全部状态",
+                completed: "已完成",
+                allJobs: "全部任务",
+                search: "搜索...",
+                entries: "条记录",
+                failedJobs: "失败任务（死信队列）",
+                failedJobsDesc: "已耗尽所有重试次数的任务记录在这里。用于诊断重复问题和追踪任务失败。",
+                searchFailedJobs: "搜索失败任务...",
+                noScheduledJobs: "没有已调度的任务",
+                noHistoryEntries: "没有历史记录",
+                noFailedJobs: "死信队列中没有失败任务",
+                jobPaused: "任务已暂停",
+                jobResumed: "任务已恢复",
+                jobCancelled: "任务已取消",
+                jobTriggered: "任务已触发",
+                clearedEntries: "已清除 {count} 条记录",
+                clearAll: "清除全部",
+                confirmCancel: "确定要取消此任务？",
+                confirmClear: "确定要清除所有失败任务记录？",
+                duration: "执行时长",
+                details: "详情",
+                time: "时间",
+                error: "错误",
+                runNumber: "执行次数",
+                retries: "重试次数",
+                unknownError: "未知错误",
+                failedToClear: "清除失败",
+                now: "现在",
+                successRate: "成功率",
+                noData: "无数据",
+                toggleTheme: "切换主题",
+                statusScheduled: "已调度",
+                statusRunning: "运行中",
+                statusPaused: "已暂停",
+                statusCompleted: "已完成",
+                statusFailed: "失败",
+                statusMissed: "已错过",
+                group: "组",
+                allGroups: "全部组",
+                groupPaused: "组已暂停",
+                groupResumed: "组已恢复",
+                groupCancelled: "组已取消",
+                confirmCancelGroup: "确定要取消此组的所有任务？",
+            }
+        };
+
         let eventSource = null;
         let data = { jobs: [], history: [], stats: {}, running: false, dead_letters: [], dead_letter_count: 0 };
         let prevHistory = [];
@@ -828,13 +1069,192 @@
         let historyJobFilter = 'all';
         let historySearch = '';
         let failedSearch = '';
+        let currentLanguage = localStorage.getItem('language') || 'en';
+        let currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
 
         const API = '{{prefix}}';
 
+        // Apply translations to all elements
+        function applyTranslations() {
+            if (typeof translations === 'undefined' || !translations[currentLanguage]) {
+                return;
+            }
+            // Navigation tabs
+            const tabDashboard = document.getElementById('tab-dashboard');
+            const tabHistory = document.getElementById('tab-history');
+            const tabFailed = document.getElementById('tab-failed');
+            if (tabDashboard) tabDashboard.textContent = t('dashboard');
+            if (tabHistory) tabHistory.textContent = t('history');
+            if (tabFailed) {
+                const badge = tabFailed.querySelector('#failed-badge');
+                tabFailed.innerHTML = t('failed');
+                if (badge) tabFailed.appendChild(badge);
+            }
+            
+            // Status texts
+            const statusText = document.getElementById('status-text');
+            const connectionText = document.getElementById('connection-text');
+            if (statusText) {
+                const isRunning = (typeof data !== 'undefined' && data.running) ? data.running : false;
+                statusText.textContent = isRunning ? t('running') : t('stopped');
+            }
+            if (connectionText) connectionText.textContent = t('connecting');
+            
+            // Dashboard labels
+            const labelActiveJobs = document.getElementById('label-active-jobs');
+            const labelTotalRuns = document.getElementById('label-total-runs');
+            const labelFailures = document.getElementById('label-failures');
+            const labelUptime = document.getElementById('label-uptime');
+            if (labelActiveJobs) labelActiveJobs.textContent = t('activeJobs');
+            if (labelTotalRuns) labelTotalRuns.textContent = t('totalRuns');
+            if (labelFailures) labelFailures.textContent = t('failures');
+            if (labelUptime) labelUptime.textContent = t('uptime');
+            
+            // Section titles
+            const titleScheduledJobs = document.getElementById('title-scheduled-jobs');
+            const titleExecutionHistory = document.getElementById('title-execution-history');
+            const titleFailedJobs = document.getElementById('title-failed-jobs');
+            if (titleScheduledJobs) titleScheduledJobs.textContent = t('scheduledJobs');
+            if (titleExecutionHistory) titleExecutionHistory.textContent = t('executionHistory');
+            if (titleFailedJobs) titleFailedJobs.textContent = t('failedJobs');
+            
+            // Table headers
+            const thJob = document.getElementById('th-job');
+            const thSchedule = document.getElementById('th-schedule');
+            const thStatus = document.getElementById('th-status');
+            const thLastRuns = document.getElementById('th-last-runs');
+            const thNextRun = document.getElementById('th-next-run');
+            const thActions = document.getElementById('th-actions');
+            if (thJob) thJob.textContent = t('job');
+            const thGroup = document.getElementById('th-group');
+            if (thGroup) thGroup.textContent = t('group');
+            if (thSchedule) thSchedule.textContent = t('schedule');
+            if (thStatus) thStatus.textContent = t('status');
+            if (thLastRuns) thLastRuns.textContent = t('last5Runs');
+            if (thNextRun) thNextRun.textContent = t('nextRun');
+            if (thActions) thActions.textContent = t('actions');
+            
+            // Group filter options
+            const optAllGroups = document.getElementById('opt-all-groups');
+            if (optAllGroups) optAllGroups.textContent = t('allGroups');
+            
+            // History table headers
+            const thHistoryStatus = document.getElementById('th-history-status');
+            const thHistoryJob = document.getElementById('th-history-job');
+            const thHistoryTime = document.getElementById('th-history-time');
+            const thHistoryDuration = document.getElementById('th-history-duration');
+            const thHistoryDetails = document.getElementById('th-history-details');
+            if (thHistoryStatus) thHistoryStatus.textContent = t('status');
+            if (thHistoryJob) thHistoryJob.textContent = t('job');
+            if (thHistoryTime) thHistoryTime.textContent = t('time');
+            if (thHistoryDuration) thHistoryDuration.textContent = t('duration');
+            if (thHistoryDetails) thHistoryDetails.textContent = t('details');
+            
+            // Failed table headers
+            const thFailedTime = document.getElementById('th-failed-time');
+            const thFailedJob = document.getElementById('th-failed-job');
+            const thFailedError = document.getElementById('th-failed-error');
+            const thFailedRun = document.getElementById('th-failed-run');
+            const thFailedRetries = document.getElementById('th-failed-retries');
+            const thFailedDuration = document.getElementById('th-failed-duration');
+            if (thFailedTime) thFailedTime.textContent = t('time');
+            if (thFailedJob) thFailedJob.textContent = t('job');
+            if (thFailedError) thFailedError.textContent = t('error');
+            if (thFailedRun) thFailedRun.textContent = t('runNumber');
+            if (thFailedRetries) thFailedRetries.textContent = t('retries');
+            if (thFailedDuration) thFailedDuration.textContent = t('duration');
+            
+            // Options and inputs
+            const optAllStatuses = document.getElementById('opt-all-statuses');
+            const optCompleted = document.getElementById('opt-completed');
+            const optFailed = document.getElementById('opt-failed');
+            const optMissed = document.getElementById('opt-missed');
+            const optAllJobs = document.getElementById('opt-all-jobs');
+            const historySearch = document.getElementById('history-search');
+            const failedSearch = document.getElementById('failed-search');
+            if (optAllStatuses) optAllStatuses.textContent = t('allStatuses');
+            if (optCompleted) optCompleted.textContent = t('statusCompleted');
+            if (optFailed) optFailed.textContent = t('statusFailed');
+            if (optMissed) optMissed.textContent = t('statusMissed');
+            if (optAllJobs) optAllJobs.textContent = t('allJobs');
+            if (historySearch) historySearch.placeholder = t('search');
+            if (failedSearch) failedSearch.placeholder = t('searchFailedJobs');
+            
+            // Buttons and descriptions
+            const clearDeadLettersBtn = document.getElementById('clear-dead-letters-btn');
+            const failedJobsDesc = document.getElementById('failed-jobs-desc');
+            if (clearDeadLettersBtn) clearDeadLettersBtn.textContent = t('clearAll');
+            if (failedJobsDesc) failedJobsDesc.textContent = t('failedJobsDesc');
+            
+            // Page title
+            const pageTitle = document.getElementById('page-title');
+            if (pageTitle) pageTitle.textContent = t('dashboard');
+            
+            // Theme toggle
+            const themeToggle = document.getElementById('theme-toggle');
+            if (themeToggle) themeToggle.title = t('toggleTheme');
+        }
+
         document.addEventListener('DOMContentLoaded', () => {
+            // Initialize theme and language
+            setTheme(currentTheme);
+            setLanguage(currentLanguage);
+            
             setupListeners();
+            initGroupFilter();
             connectSSE();
         });
+
+        // Theme functions
+        function setTheme(theme) {
+            currentTheme = theme;
+            document.documentElement.setAttribute('data-theme', theme);
+            localStorage.setItem('theme', theme);
+            updateThemeIcon();
+        }
+
+        function toggleTheme() {
+            const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
+            setTheme(newTheme);
+        }
+
+        function updateThemeIcon() {
+            const icon = document.getElementById('theme-icon');
+            if (icon) {
+                icon.textContent = currentTheme === 'dark' ? '☀️' : '🌙';
+            }
+        }
+
+        // Language functions
+        function setLanguage(lang) {
+            currentLanguage = lang;
+            localStorage.setItem('language', lang);
+            
+            // Update language selector
+            const langSelector = document.getElementById('language-selector');
+            if (langSelector) langSelector.value = currentLanguage;
+            
+            // Apply all translations
+            applyTranslations();
+            
+            // Re-render current view with new language
+            if (typeof render === 'function') {
+                render();
+            }
+        }
+
+        function t(key, params = {}) {
+            if (!translations || !translations[currentLanguage]) {
+                return key;
+            }
+            let text = translations[currentLanguage][key] || translations['en'][key] || key;
+            if (params && Object.keys(params).length > 0) {
+                Object.keys(params).forEach(k => {
+                    text = text.replace(`{${k}}`, params[k]);
+                });
+            }
+            return text;
+        }
 
         function setupListeners() {
             document.getElementById('history-status-filter').addEventListener('change', e => {
@@ -897,7 +1317,7 @@
             const badge = document.getElementById('connection-badge');
             const text = document.getElementById('connection-text');
             badge.classList.toggle('disconnected', !connected);
-            text.textContent = connected ? 'Live' : 'Offline';
+            text.textContent = connected ? t('live') : t('offline');
         }
 
         function checkForToasts(newData) {
@@ -910,19 +1330,28 @@
             );
             newEvents.forEach(evt => {
                 if (evt.status === 'completed') {
-                    toast('success', `${evt.func_name} completed`);
+                    toast('success', `${evt.func_name} ${t('completed').toLowerCase()}`);
                 } else if (evt.status === 'failed') {
-                    toast('error', `${evt.func_name} failed`);
+                    toast('error', `${evt.func_name} ${t('failed').toLowerCase()}`);
                 }
             });
             prevHistory = [...newData.history];
+        }
+
+        // updateUI is now replaced by applyTranslations() + render()
+        // This function is kept for backward compatibility
+        function updateUI() {
+            applyTranslations();
+            if (typeof render === 'function') {
+                render();
+            }
         }
 
         function render() {
             // Status
             const statusEl = document.getElementById('scheduler-status');
             statusEl.classList.toggle('stopped', !data.running);
-            statusEl.innerHTML = `<span class="dot"></span><span>${data.running ? 'Running' : 'Stopped'}</span>`;
+            document.getElementById('status-text').textContent = data.running ? t('running') : t('stopped');
 
             // Stats
             document.getElementById('stat-jobs').textContent = data.jobs.length;
@@ -935,7 +1364,7 @@
             const rateEl = document.getElementById('stat-rate');
             if (runs > 0) {
                 const rate = ((runs - fails) / runs * 100).toFixed(1);
-                rateEl.textContent = `${rate}% success`;
+                rateEl.textContent = `${rate}% ${t('successRate')}`;
                 rateEl.classList.toggle('bad', parseFloat(rate) < 95);
             } else {
                 rateEl.textContent = '';
@@ -968,30 +1397,91 @@
             updateJobDropdown();
         }
 
+        let currentGroupFilter = 'all';
+
+        // Initialize group filter
+        async function initGroupFilter() {
+            const groupFilter = document.getElementById('jobs-group-filter');
+            if (!groupFilter) return;
+
+            try {
+                const res = await fetch(`${API}/api/groups`);
+                const result = await res.json();
+                const groups = result.groups || [];
+                
+                // Clear existing options except "all"
+                groupFilter.innerHTML = `<option value="all">${t('allGroups')}</option>`;
+                
+                // Add group options
+                groups.forEach(group => {
+                    const option = document.createElement('option');
+                    option.value = group;
+                    option.textContent = group;
+                    groupFilter.appendChild(option);
+                });
+
+                // Update current filter
+                groupFilter.value = currentGroupFilter;
+                
+                // Add change listener
+                groupFilter.addEventListener('change', (e) => {
+                    currentGroupFilter = e.target.value;
+                    renderJobs();
+                });
+            } catch (err) {
+                console.error('Error loading groups:', err);
+            }
+        }
+
         function renderJobs() {
             const tbody = document.getElementById('jobs-tbody');
-            const jobs = [...data.jobs].sort((a, b) => a.func_name.localeCompare(b.func_name));
+            let jobs = [...data.jobs];
 
-            document.getElementById('jobs-count').textContent = `${jobs.length} job${jobs.length !== 1 ? 's' : ''}`;
+            // Filter by group if needed
+            if (currentGroupFilter !== 'all') {
+                jobs = jobs.filter(job => job.group === currentGroupFilter);
+            }
+
+            jobs.sort((a, b) => a.func_name.localeCompare(b.func_name));
+
+            const jobText = jobs.length === 1 ? t('job') : t('jobs');
+            document.getElementById('jobs-count').textContent = `${jobs.length} ${jobText}`;
 
             if (jobs.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="6" class="empty-state">No scheduled jobs</td></tr>';
+                tbody.innerHTML = `<tr><td colspan="7" class="empty-state">${t('noScheduledJobs')}</td></tr>`;
                 return;
             }
 
             tbody.innerHTML = jobs.map(job => {
                 const lastRuns = getLastRuns(job.func_name, 5);
+                const statusMap = {
+                    'scheduled': t('statusScheduled'),
+                    'running': t('statusRunning'),
+                    'paused': t('statusPaused'),
+                    'completed': t('statusCompleted'),
+                    'failed': t('statusFailed'),
+                    'missed': t('statusMissed')
+                };
+                const jobStatusText = statusMap[job.status] || job.status;
+                
                 const runDots = lastRuns.map((r, i) => {
                     const cls = r ? (r.status === 'completed' ? 'success' : 'failed') : '';
-                    const tip = r ? `${r.status} - ${formatTime(r.timestamp_readable)}` : 'No data';
+                    let tip = '';
+                    if (r) {
+                        const runStatusText = statusMap[r.status] || r.status;
+                        tip = `${runStatusText} - ${formatTime(r.timestamp_readable)}`;
+                    } else {
+                        tip = t('noData');
+                    }
                     return `<div class="run-dot ${cls} run-dot-tooltip" data-tooltip="${esc(tip)}"></div>`;
                 }).join('');
 
                 return `
                     <tr>
                         <td><span class="job-name">${esc(job.func_name)}</span></td>
+                        <td><span class="job-group" style="font-size: 11px; color: var(--text-secondary);">${esc(job.group || 'default')}</span></td>
                         <td><span class="job-schedule">${esc(job.schedule)}</span></td>
-                        <td><span class="job-status ${job.status}">${job.status}</span></td>
+                        <td><span class="job-status ${job.status}">${jobStatusText}</span></td>
                         <td><div class="run-dots">${runDots}</div></td>
                         <td>
                             <div class="next-run">${job.next_run}</div>
@@ -1000,11 +1490,11 @@
                         <td>
                             <div class="action-btns">
                                 ${job.status === 'paused'
-                        ? `<button class="action-btn" onclick="resumeJob('${job.job_id}')">Resume</button>`
-                        : `<button class="action-btn" onclick="pauseJob('${job.job_id}')">Pause</button>`
+                        ? `<button class="action-btn" onclick="resumeJob('${job.job_id}')">${t('resume')}</button>`
+                        : `<button class="action-btn" onclick="pauseJob('${job.job_id}')">${t('pause')}</button>`
                     }
-                                <button class="action-btn" onclick="runJobNow('${job.job_id}')" ${job.status === 'running' ? 'disabled' : ''}>Run</button>
-                                <button class="action-btn danger" onclick="cancelJob('${job.job_id}')">Cancel</button>
+                                <button class="action-btn" onclick="runJobNow('${job.job_id}')" ${job.status === 'running' ? 'disabled' : ''}>${t('run')}</button>
+                                <button class="action-btn danger" onclick="cancelJob('${job.job_id}')">${t('cancel')}</button>
                             </div>
                         </td>
                     </tr>
@@ -1042,26 +1532,37 @@
                 );
             }
 
-            document.getElementById('history-count').textContent = `${history.length} entries`;
+            document.getElementById('history-count').textContent = `${history.length} ${t('entries')}`;
 
             const tbody = document.getElementById('history-tbody');
             if (history.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="5" class="empty-state">No history entries</td></tr>';
+                tbody.innerHTML = `<tr><td colspan="5" class="empty-state">${t('noHistoryEntries')}</td></tr>`;
                 return;
             }
 
-            tbody.innerHTML = history.map(h => `
+            tbody.innerHTML = history.map(h => {
+                const statusMap = {
+                    'scheduled': t('statusScheduled'),
+                    'running': t('statusRunning'),
+                    'paused': t('statusPaused'),
+                    'completed': t('statusCompleted'),
+                    'failed': t('statusFailed'),
+                    'missed': t('statusMissed')
+                };
+                const statusText = statusMap[h.status] || h.status;
+                return `
                 <tr>
-                    <td><span class="history-status ${h.status}">${h.status}</span></td>
+                    <td><span class="history-status ${h.status}">${statusText}</span></td>
                     <td><span class="history-job">${esc(h.func_name)}</span></td>
                     <td><span class="history-time">${h.timestamp_readable || formatTs(h.timestamp)}</span></td>
                     <td><span class="history-duration">${h.execution_time ? h.execution_time.toFixed(2) + 's' : '-'}</span></td>
                     <td>${h.error
                     ? `<span class="history-error" title="${esc(h.error)}">${esc(h.error)}</span>`
-                    : `<span style="color:var(--text-tertiary)">Run #${h.run_count || '-'}</span>`
+                    : `<span style="color:var(--text-tertiary)">${t('runNumber')} ${h.run_count || '-'}</span>`
                 }</td>
                 </tr>
-            `).join('');
+            `;
+            }).join('');
         }
 
         function renderFailed() {
@@ -1074,11 +1575,11 @@
                 );
             }
 
-            document.getElementById('failed-count').textContent = `${deadLetters.length} entries`;
+            document.getElementById('failed-count').textContent = `${deadLetters.length} ${t('entries')}`;
 
             const tbody = document.getElementById('failed-tbody');
             if (deadLetters.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="6" class="empty-state">No failed jobs in dead letter queue</td></tr>';
+                tbody.innerHTML = `<tr><td colspan="6" class="empty-state">${t('noFailedJobs')}</td></tr>`;
                 return;
             }
 
@@ -1086,8 +1587,8 @@
                 <tr>
                     <td><span class="history-time">${dl.timestamp_readable || formatTs(dl.timestamp)}</span></td>
                     <td><span class="history-job">${esc(dl.func_name)}</span></td>
-                    <td><span class="history-error" title="${esc(dl.error || '')}">${esc(dl.error || 'Unknown error')}</span></td>
-                    <td><span style="color:var(--text-secondary)">#${dl.run_count || '-'}</span></td>
+                    <td><span class="history-error" title="${esc(dl.error || '')}">${esc(dl.error || t('unknownError'))}</span></td>
+                    <td><span style="color:var(--text-secondary)">${t('runNumber')} ${dl.run_count || '-'}</span></td>
                     <td><span style="color:var(--text-secondary)">${dl.retry_count || 0}</span></td>
                     <td><span class="history-duration">${dl.execution_time ? dl.execution_time.toFixed(2) + 's' : '-'}</span></td>
                 </tr>
@@ -1099,7 +1600,7 @@
             const current = select.value;
             const names = [...new Set(data.history.map(h => h.func_name))].sort();
 
-            select.innerHTML = '<option value="all">All Jobs</option>' +
+            select.innerHTML = `<option value="all">${t('allJobs')}</option>` +
                 names.map(n => `<option value="${esc(n)}">${esc(n)}</option>`).join('');
 
             if (names.includes(current) || current === 'all') {
@@ -1111,33 +1612,33 @@
         async function pauseJob(id) {
             const res = await fetch(`${API}/api/jobs/${id}/pause`, { method: 'POST' });
             const d = await res.json();
-            toast(d.success ? 'success' : 'error', d.success ? 'Job paused' : d.error);
+            toast(d.success ? 'success' : 'error', d.success ? t('jobPaused') : d.error);
         }
 
         async function resumeJob(id) {
             const res = await fetch(`${API}/api/jobs/${id}/resume`, { method: 'POST' });
             const d = await res.json();
-            toast(d.success ? 'success' : 'error', d.success ? 'Job resumed' : d.error);
+            toast(d.success ? 'success' : 'error', d.success ? t('jobResumed') : d.error);
         }
 
         async function cancelJob(id) {
-            if (!confirm('Cancel this job?')) return;
+            if (!confirm(t('confirmCancel'))) return;
             const res = await fetch(`${API}/api/jobs/${id}/cancel`, { method: 'POST' });
             const d = await res.json();
-            toast(d.success ? 'success' : 'error', d.success ? 'Job cancelled' : d.error);
+            toast(d.success ? 'success' : 'error', d.success ? t('jobCancelled') : d.error);
         }
 
         async function runJobNow(id) {
             const res = await fetch(`${API}/api/jobs/${id}/run`, { method: 'POST' });
             const d = await res.json();
-            toast(d.success ? 'success' : 'error', d.success ? 'Job triggered' : d.error);
+            toast(d.success ? 'success' : 'error', d.success ? t('jobTriggered') : d.error);
         }
 
         async function clearDeadLetters() {
-            if (!confirm('Clear all failed job entries from the dead letter queue?')) return;
+            if (!confirm(t('confirmClear'))) return;
             const res = await fetch(`${API}/api/dead-letters`, { method: 'DELETE' });
             const d = await res.json();
-            toast(d.success ? 'success' : 'error', d.success ? `Cleared ${d.cleared} entries` : 'Failed to clear');
+            toast(d.success ? 'success' : 'error', d.success ? t('clearedEntries', { count: d.cleared }) : t('failedToClear'));
         }
 
         // Toast
@@ -1155,7 +1656,7 @@
 
         // Utils
         function formatCountdown(s) {
-            if (s <= 0) return 'Now';
+            if (s <= 0) return t('now');
             if (s < 60) return `${Math.round(s)}s`;
             if (s < 3600) return `${Math.floor(s / 60)}m ${Math.round(s % 60)}s`;
             if (s < 86400) return `${Math.floor(s / 3600)}h ${Math.floor((s % 3600) / 60)}m`;

@@ -6,6 +6,8 @@ import time
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
+import fcntl
+import os
 
 from .base import StorageBackend
 
@@ -39,7 +41,7 @@ class JSONStorageBackend(StorageBackend):
         job_counter: int,
         scheduler_running: bool,
     ) -> None:
-        """Save state to JSON file."""
+        """Save state to JSON file with file locking."""
         try:
             state = {
                 "version": "1.0",
@@ -54,11 +56,33 @@ class JSONStorageBackend(StorageBackend):
                 "_job_counter": job_counter,
             }
             
-            # Atomic write using temp file
+            # Atomic write using temp file with file locking
             temp_file = self.state_file.with_suffix(".tmp")
-            with open(temp_file, "w") as f:
-                json.dump(state, f, indent=2)
-            temp_file.replace(self.state_file)
+            try:
+                with open(temp_file, "w") as f:
+                    # Try to acquire exclusive lock (non-blocking)
+                    try:
+                        if hasattr(fcntl, 'LOCK_EX'):
+                            fcntl.flock(f.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                    except (IOError, OSError):
+                        # Lock acquisition failed, but continue anyway
+                        # (Windows doesn't support fcntl)
+                        pass
+                    
+                    json.dump(state, f, indent=2)
+                    f.flush()
+                    os.fsync(f.fileno())  # Ensure data is written to disk
+                
+                # Atomic replace
+                temp_file.replace(self.state_file)
+            except Exception as e:
+                # Clean up temp file on error
+                if temp_file.exists():
+                    try:
+                        temp_file.unlink()
+                    except Exception:
+                        pass
+                raise
             
         except Exception as e:
             logger.error(f"Failed to save state: {e}")
@@ -79,15 +103,38 @@ class JSONStorageBackend(StorageBackend):
             return None
     
     def save_dead_letters(self, dead_letters: List[Dict[str, Any]], max_dead_letters: int) -> None:
-        """Save dead letter queue to JSON file."""
+        """Save dead letter queue to JSON file with file locking."""
         try:
             data = {
                 "dead_letters": dead_letters,
                 "max_dead_letters": max_dead_letters,
             }
             
-            with open(self._dead_letters_file, "w") as f:
-                json.dump(data, f, indent=2)
+            temp_file = self._dead_letters_file.with_suffix(".tmp")
+            try:
+                with open(temp_file, "w") as f:
+                    # Try to acquire exclusive lock (non-blocking)
+                    try:
+                        if hasattr(fcntl, 'LOCK_EX'):
+                            fcntl.flock(f.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                    except (IOError, OSError):
+                        # Lock acquisition failed, but continue anyway
+                        pass
+                    
+                    json.dump(data, f, indent=2)
+                    f.flush()
+                    os.fsync(f.fileno())
+                
+                # Atomic replace
+                temp_file.replace(self._dead_letters_file)
+            except Exception as e:
+                # Clean up temp file on error
+                if temp_file.exists():
+                    try:
+                        temp_file.unlink()
+                    except Exception:
+                        pass
+                raise
                 
         except Exception as e:
             logger.error(f"Failed to save dead letters: {e}")

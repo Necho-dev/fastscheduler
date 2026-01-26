@@ -40,6 +40,7 @@ class Job:
     paused: bool = field(default=False, compare=False)
     timezone: Optional[str] = field(default=None, compare=False)
     cron_expression: Optional[str] = field(default=None, compare=False)
+    group: str = field(default="default", compare=False)  # Job group for business isolation
 
     def to_dict(self) -> Dict:
         """Serialize job for persistence."""
@@ -64,7 +65,44 @@ class Job:
             "paused": self.paused,
             "timezone": self.timezone,
             "cron_expression": self.cron_expression,
+            "group": self.group,
+            "args": list(self.args) if self.args else [],
+            "kwargs": self.kwargs if self.kwargs else {},
         }
+
+    @classmethod
+    def from_dict(cls, data: Dict) -> "Job":
+        """Deserialize job from dictionary."""
+        # Convert args back to tuple
+        args = tuple(data.get("args", [])) if data.get("args") else tuple()
+        kwargs = data.get("kwargs", {}) or {}
+        
+        return cls(
+            next_run=data["next_run"],
+            job_id=data["job_id"],
+            func_name=data["func_name"],
+            func_module=data["func_module"],
+            interval=data.get("interval"),
+            repeat=data.get("repeat", False),
+            status=JobStatus(data.get("status", "scheduled")),
+            created_at=data.get("created_at", time.time()),
+            last_run=data.get("last_run"),
+            run_count=data.get("run_count", 0),
+            max_retries=data.get("max_retries", 3),
+            retry_count=data.get("retry_count", 0),
+            catch_up=data.get("catch_up", True),
+            schedule_type=data.get("schedule_type", "interval"),
+            schedule_time=data.get("schedule_time"),
+            schedule_days=data.get("schedule_days"),
+            timeout=data.get("timeout"),
+            paused=data.get("paused", False),
+            timezone=data.get("timezone"),
+            cron_expression=data.get("cron_expression"),
+            group=data.get("group", "default"),
+            args=args,
+            kwargs=kwargs,
+            func=None,  # Function reference must be restored separately
+        )
 
     def get_schedule_description(self) -> str:
         """Get human-readable schedule description."""

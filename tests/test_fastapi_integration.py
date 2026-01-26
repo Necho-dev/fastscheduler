@@ -438,3 +438,303 @@ class TestDeadLetterAPI:
         assert data["dead_letters"] == []
         assert data["total"] == 0
 
+
+class TestJobCreationAPI:
+    """Test job creation via API"""
+
+    @pytest.fixture
+    def scheduler_with_registered_func(self, tmp_path):
+        """Create scheduler with registered function"""
+        state_file = tmp_path / "test_scheduler.json"
+        sched = FastScheduler(state_file=str(state_file), quiet=True, auto_start=False)
+        
+        def test_task():
+            pass
+        
+        sched.register_function(test_task)
+        yield sched
+        if sched.running:
+            sched.stop()
+
+    @pytest.fixture
+    def client_with_func(self, scheduler_with_registered_func):
+        """Create client with scheduler that has registered function"""
+        app = FastAPI()
+        app.include_router(create_scheduler_routes(scheduler_with_registered_func))
+        return TestClient(app)
+
+    def test_create_interval_job(self, client_with_func):
+        """Test creating an interval job via API"""
+        response = client_with_func.post("/scheduler/api/jobs", json={
+            "func_name": "test_task",
+            "func_module": "tests.test_fastapi_integration",
+            "schedule_type": "interval",
+            "schedule_config": {"interval": 30, "unit": "seconds"},
+            "group": "test_group"
+        })
+        
+        assert response.status_code == 201
+        data = response.json()
+        assert data["success"] is True
+        assert "job_id" in data
+
+    def test_create_daily_job(self, client_with_func):
+        """Test creating a daily job via API"""
+        response = client_with_func.post("/scheduler/api/jobs", json={
+            "func_name": "test_task",
+            "func_module": "tests.test_fastapi_integration",
+            "schedule_type": "daily",
+            "schedule_config": {"time": "14:30"},
+            "group": "test_group"
+        })
+        
+        assert response.status_code == 201
+        data = response.json()
+        assert data["success"] is True
+
+    def test_create_weekly_job(self, client_with_func):
+        """Test creating a weekly job via API"""
+        response = client_with_func.post("/scheduler/api/jobs", json={
+            "func_name": "test_task",
+            "func_module": "tests.test_fastapi_integration",
+            "schedule_type": "weekly",
+            "schedule_config": {"time": "10:00", "days": [0, 4]},
+            "group": "test_group"
+        })
+        
+        assert response.status_code == 201
+        data = response.json()
+        assert data["success"] is True
+
+    def test_create_cron_job(self, client_with_func):
+        """Test creating a cron job via API"""
+        pytest.importorskip("croniter")
+        
+        response = client_with_func.post("/scheduler/api/jobs", json={
+            "func_name": "test_task",
+            "func_module": "tests.test_fastapi_integration",
+            "schedule_type": "cron",
+            "schedule_config": {"expression": "*/5 * * * *"},
+            "group": "test_group"
+        })
+        
+        assert response.status_code == 201
+        data = response.json()
+        assert data["success"] is True
+
+    def test_create_once_job(self, client_with_func):
+        """Test creating a once job via API"""
+        response = client_with_func.post("/scheduler/api/jobs", json={
+            "func_name": "test_task",
+            "func_module": "tests.test_fastapi_integration",
+            "schedule_type": "once",
+            "schedule_config": {"delay": 10, "unit": "seconds"},
+            "group": "test_group"
+        })
+        
+        assert response.status_code == 201
+        data = response.json()
+        assert data["success"] is True
+
+    def test_create_job_with_invalid_function(self, client):
+        """Test creating a job with unregistered function"""
+        response = client.post("/scheduler/api/jobs", json={
+            "func_name": "nonexistent_function",
+            "func_module": "tests.test_fastapi_integration",
+            "schedule_type": "interval",
+            "schedule_config": {"interval": 30, "unit": "seconds"}
+        })
+        
+        assert response.status_code == 400
+
+    def test_update_job(self, client_with_func):
+        """Test updating a job via API"""
+        # Create a job first
+        create_response = client_with_func.post("/scheduler/api/jobs", json={
+            "func_name": "test_task",
+            "func_module": "tests.test_fastapi_integration",
+            "schedule_type": "interval",
+            "schedule_config": {"interval": 30, "unit": "seconds"}
+        })
+        job_id = create_response.json()["job_id"]
+        
+        # Update the job
+        update_response = client_with_func.put(f"/scheduler/api/jobs/{job_id}", json={
+            "schedule_config": {"interval": 60, "unit": "seconds"},
+            "enabled": False
+        })
+        
+        assert update_response.status_code == 200
+        data = update_response.json()
+        assert data["success"] is True
+
+    def test_delete_job(self, client_with_func):
+        """Test deleting a job via API"""
+        # Create a job first
+        create_response = client_with_func.post("/scheduler/api/jobs", json={
+            "func_name": "test_task",
+            "func_module": "tests.test_fastapi_integration",
+            "schedule_type": "interval",
+            "schedule_config": {"interval": 30, "unit": "seconds"}
+        })
+        job_id = create_response.json()["job_id"]
+        
+        # Delete the job
+        delete_response = client_with_func.delete(f"/scheduler/api/jobs/{job_id}")
+        
+        assert delete_response.status_code == 200
+        data = delete_response.json()
+        assert data["success"] is True
+
+    def test_enable_disable_job(self, client_with_func):
+        """Test enabling and disabling a job via API"""
+        # Create a job first
+        create_response = client_with_func.post("/scheduler/api/jobs", json={
+            "func_name": "test_task",
+            "func_module": "tests.test_fastapi_integration",
+            "schedule_type": "interval",
+            "schedule_config": {"interval": 30, "unit": "seconds"}
+        })
+        job_id = create_response.json()["job_id"]
+        
+        # Disable the job
+        disable_response = client_with_func.post(f"/scheduler/api/jobs/{job_id}/disable")
+        assert disable_response.status_code == 200
+        
+        # Enable the job
+        enable_response = client_with_func.post(f"/scheduler/api/jobs/{job_id}/enable")
+        assert enable_response.status_code == 200
+
+    def test_run_job_now(self, tmp_path):
+        """Test running a job immediately via API"""
+        executed = []
+        
+        def test_task():
+            executed.append(1)
+        
+        # Create scheduler and register function
+        state_file = tmp_path / "test_scheduler.json"
+        scheduler = FastScheduler(state_file=str(state_file), quiet=True, auto_start=False)
+        scheduler.register_function(test_task)
+        
+        app = FastAPI()
+        app.include_router(create_scheduler_routes(scheduler))
+        client = TestClient(app)
+        
+        # Create a job
+        create_response = client.post("/scheduler/api/jobs", json={
+            "func_name": "test_task",
+            "func_module": "tests.test_fastapi_integration",
+            "schedule_type": "interval",
+            "schedule_config": {"interval": 30, "unit": "seconds"}
+        })
+        job_id = create_response.json()["job_id"]
+        
+        # Run the job now
+        run_response = client.post(f"/scheduler/api/jobs/{job_id}/run")
+        assert run_response.status_code == 200
+        
+        # Give it a moment to execute
+        time.sleep(0.1)
+        
+        # Check if it executed
+        assert len(executed) >= 1
+        
+        scheduler.stop()
+
+
+class TestGroupManagementAPI:
+    """Test group management API endpoints"""
+
+    @pytest.fixture
+    def scheduler_with_groups(self, tmp_path):
+        """Create scheduler with multiple groups"""
+        state_file = tmp_path / "test_scheduler.json"
+        sched = FastScheduler(state_file=str(state_file), quiet=True, auto_start=False)
+        
+        def task1():
+            pass
+        
+        def task2():
+            pass
+        
+        sched.register_function(task1)
+        sched.register_function(task2)
+        
+        sched.create_job(
+            func_name="task1",
+            func_module="tests.test_fastapi_integration",
+            schedule_type="interval",
+            schedule_config={"interval": 10, "unit": "seconds"},
+            group="group1"
+        )
+        
+        sched.create_job(
+            func_name="task2",
+            func_module="tests.test_fastapi_integration",
+            schedule_type="interval",
+            schedule_config={"interval": 20, "unit": "seconds"},
+            group="group2"
+        )
+        
+        yield sched
+        if sched.running:
+            sched.stop()
+
+    @pytest.fixture
+    def client_with_groups(self, scheduler_with_groups):
+        """Create client with scheduler that has groups"""
+        app = FastAPI()
+        app.include_router(create_scheduler_routes(scheduler_with_groups))
+        return TestClient(app)
+
+    def test_get_groups(self, client_with_groups):
+        """Test getting all groups via API"""
+        response = client_with_groups.get("/scheduler/api/groups")
+        assert response.status_code == 200
+        data = response.json()
+        assert "groups" in data
+        assert "group1" in data["groups"]
+        assert "group2" in data["groups"]
+
+    def test_get_group_jobs(self, client_with_groups):
+        """Test getting jobs in a group via API"""
+        response = client_with_groups.get("/scheduler/api/groups/group1/jobs")
+        assert response.status_code == 200
+        data = response.json()
+        assert "jobs" in data
+        assert len(data["jobs"]) == 1
+        assert data["jobs"][0]["func_name"] == "task1"
+
+    def test_pause_group(self, client_with_groups):
+        """Test pausing all jobs in a group via API"""
+        response = client_with_groups.post("/scheduler/api/groups/group1/pause")
+        assert response.status_code == 200
+        data = response.json()
+        assert data["success"] is True
+        assert data["paused"] == 1
+
+    def test_resume_group(self, client_with_groups):
+        """Test resuming all jobs in a group via API"""
+        # First pause the group
+        client_with_groups.post("/scheduler/api/groups/group1/pause")
+        
+        # Then resume
+        response = client_with_groups.post("/scheduler/api/groups/group1/resume")
+        assert response.status_code == 200
+        data = response.json()
+        assert data["success"] is True
+        assert data["resumed"] == 1
+
+    def test_cancel_group(self, client_with_groups):
+        """Test cancelling all jobs in a group via API"""
+        response = client_with_groups.delete("/scheduler/api/groups/group1")
+        assert response.status_code == 200
+        data = response.json()
+        assert data["success"] is True
+        assert data["cancelled"] == 1
+        
+        # Verify jobs are gone
+        jobs_response = client_with_groups.get("/scheduler/api/groups/group1/jobs")
+        assert len(jobs_response.json()["jobs"]) == 0
+
