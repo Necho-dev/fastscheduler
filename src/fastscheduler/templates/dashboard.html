@@ -1311,6 +1311,14 @@
                 updateConnection(false);
                 setTimeout(connectSSE, 2000);
             };
+            
+            // Listen for shutdown event from server
+            eventSource.addEventListener("shutdown", (event) => {
+                console.log("Server is shutting down, closing connection...");
+                eventSource.close();
+                updateConnection(false);
+            });
+            
             eventSource.onmessage = e => {
                 try {
                     const newData = JSON.parse(e.data);

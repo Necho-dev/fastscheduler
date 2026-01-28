@@ -97,6 +97,13 @@ def create_scheduler_routes(scheduler: "FastScheduler", prefix: str = "/schedule
                     logger.debug("SSE connection closed by client")
                     break
 
+                # Check if scheduler is shutting down
+                if scheduler.is_shutdown_requested():
+                    # Send shutdown signal to client
+                    yield "event: shutdown\ndata: bye\n\n"
+                    logger.info("Sent shutdown signal to client")
+                    break
+
                 try:
                     # Get current state
                     stats = scheduler.get_statistics()
