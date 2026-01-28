@@ -92,17 +92,23 @@ def create_scheduler_routes(scheduler: "FastScheduler", prefix: str = "/schedule
     async def event_generator(request: Request) -> AsyncGenerator[str, None]:
         """Generate SSE events for real-time updates"""
         try:
-            with anyio.open_signal_receiver(signal.SIGINT, signal.SIGTERM) as signals:
+            async with anyio.create_task_group() as tg:
+                # Task A: Watch for SIGINT and SIGTERM
+                async def signal_watcher():
+                    async with anyio.open_signal_receiver(signal.SIGINT, signal.SIGTERM) as signals:
+                        async for _ in signals:
+                            logger.info("SSE detected system interrupt signal, starting shutdown process")
+                            tg.cancel_scope.cancel()
+                            return
+                
+                tg.start_soon(signal_watcher)
+                
+                # Task B: Send SSE events
                 while True:
                     # Check if the client has closed the connection
                     if await request.is_disconnected():
                         logger.debug("SSE connection closed by client")
                         break
-                    
-                    async with anyio.move_on_after(1):
-                        async for sig in signals:
-                            scheduler._shutdown_event_set = True
-                            break
 
                     # Check if scheduler is shutting down
                     if scheduler.is_shutdown_requested():
