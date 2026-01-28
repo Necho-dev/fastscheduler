@@ -21,6 +21,7 @@ class Job:
     func: Optional[Callable] = field(default=None, compare=False, repr=False)
     interval: Optional[float] = field(default=None, compare=False)
     job_id: str = field(default="", compare=False)
+    job_name: str = field(default="", compare=False)
     func_name: str = field(default="", compare=False)
     func_module: str = field(default="", compare=False)
     args: tuple = field(default_factory=tuple, compare=False, repr=False)
@@ -46,6 +47,7 @@ class Job:
         """Serialize job for persistence."""
         return {
             "job_id": self.job_id,
+            "job_name": self.job_name,
             "func_name": self.func_name,
             "func_module": self.func_module,
             "next_run": self.next_run,
@@ -80,6 +82,7 @@ class Job:
         return cls(
             next_run=data["next_run"],
             job_id=data["job_id"],
+            job_name=data.get("job_name", ""),
             func_name=data["func_name"],
             func_module=data["func_module"],
             interval=data.get("interval"),
@@ -135,9 +138,10 @@ class Job:
 @dataclass
 class JobHistory:
     job_id: str
-    func_name: str
-    status: str
-    timestamp: float
+    job_name: Optional[str] = None
+    func_name: str = ""
+    status: str = ""
+    timestamp: float = 0.0
     error: Optional[str] = None
     run_count: int = 0
     retry_count: int = 0

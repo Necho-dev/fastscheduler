@@ -1347,10 +1347,11 @@
                 !prevHistory.find(p => p.timestamp === h.timestamp && p.job_id === h.job_id)
             );
             newEvents.forEach(evt => {
+                const name = evt.job_name || evt.func_name;
                 if (evt.status === 'completed') {
-                    toast('success', `${evt.func_name} ${t('completed').toLowerCase()}`);
+                    toast('success', `${name} ${t('completed').toLowerCase()}`);
                 } else if (evt.status === 'failed') {
-                    toast('error', `${evt.func_name} ${t('failed').toLowerCase()}`);
+                    toast('error', `${name} ${t('failed').toLowerCase()}`);
                 }
             });
             prevHistory = [...newData.history];
@@ -1471,6 +1472,7 @@
             }
 
             tbody.innerHTML = jobs.map(job => {
+                const displayName = job.job_name || job.func_name;
                 const lastRuns = getLastRuns(job.func_name, 5);
                 const statusMap = {
                     'scheduled': t('statusScheduled'),
@@ -1496,7 +1498,12 @@
 
                 return `
                     <tr>
-                        <td><span class="job-name">${esc(job.func_name)}</span></td>
+                        <td>
+                            <div class="job-name">${esc(displayName)}</div>
+                            ${job.job_name && job.job_name !== job.func_name
+                                ? `<div style="font-size:11px;color:var(--text-tertiary);">${esc(job.func_name)}</div>`
+                                : ''}
+                        </td>
                         <td><span class="job-group" style="font-size: 11px; color: var(--text-secondary);">${esc(job.group || 'default')}</span></td>
                         <td><span class="job-schedule">${esc(job.schedule)}</span></td>
                         <td><span class="job-status ${job.status}">${jobStatusText}</span></td>
@@ -1544,10 +1551,11 @@
                 history = history.filter(h => h.func_name === historyJobFilter);
             }
             if (historySearch) {
-                history = history.filter(h =>
-                    h.func_name.toLowerCase().includes(historySearch) ||
-                    (h.error && h.error.toLowerCase().includes(historySearch))
-                );
+                history = history.filter(h => {
+                    const name = (h.job_name || h.func_name || '').toLowerCase();
+                    const err = (h.error || '').toLowerCase();
+                    return name.includes(historySearch) || err.includes(historySearch);
+                });
             }
 
             document.getElementById('history-count').textContent = `${history.length} ${t('entries')}`;
@@ -1568,10 +1576,13 @@
                     'missed': t('statusMissed')
                 };
                 const statusText = statusMap[h.status] || h.status;
+                const displayName = h.job_name || h.func_name;
                 return `
                 <tr>
                     <td><span class="history-status ${h.status}">${statusText}</span></td>
-                    <td><span class="history-job">${esc(h.func_name)}</span></td>
+                    <td>
+                        <div class="history-job" title="${esc(h.func_name)}">${esc(displayName)}</div>
+                    </td>
                     <td><span class="history-time">${h.timestamp_readable || formatTs(h.timestamp)}</span></td>
                     <td><span class="history-duration">${h.execution_time ? h.execution_time.toFixed(2) + 's' : '-'}</span></td>
                     <td>${h.error
@@ -1587,10 +1598,11 @@
             let deadLetters = data.dead_letters || [];
 
             if (failedSearch) {
-                deadLetters = deadLetters.filter(dl =>
-                    dl.func_name.toLowerCase().includes(failedSearch) ||
-                    (dl.error && dl.error.toLowerCase().includes(failedSearch))
-                );
+                deadLetters = deadLetters.filter(dl => {
+                    const name = (dl.job_name || dl.func_name || '').toLowerCase();
+                    const err = (dl.error || '').toLowerCase();
+                    return name.includes(failedSearch) || err.includes(failedSearch);
+                });
             }
 
             document.getElementById('failed-count').textContent = `${deadLetters.length} ${t('entries')}`;
@@ -1601,16 +1613,21 @@
                 return;
             }
 
-            tbody.innerHTML = deadLetters.map(dl => `
+            tbody.innerHTML = deadLetters.map(dl => {
+                const displayName = dl.job_name || dl.func_name;
+                return `
                 <tr>
                     <td><span class="history-time">${dl.timestamp_readable || formatTs(dl.timestamp)}</span></td>
-                    <td><span class="history-job">${esc(dl.func_name)}</span></td>
+                    <td>
+                        <div class="history-job" title="${esc(dl.func_name)}">${esc(displayName)}</div>
+                    </td>
                     <td><span class="history-error" title="${esc(dl.error || '')}">${esc(dl.error || t('unknownError'))}</span></td>
                     <td><span style="color:var(--text-secondary)">${t('runNumber')} ${dl.run_count || '-'}</span></td>
                     <td><span style="color:var(--text-secondary)">${dl.retry_count || 0}</span></td>
                     <td><span class="history-duration">${dl.execution_time ? dl.execution_time.toFixed(2) + 's' : '-'}</span></td>
                 </tr>
-            `).join('');
+            `;
+            }).join('');
         }
 
         function updateJobDropdown() {
@@ -1619,7 +1636,11 @@
             const names = [...new Set(data.history.map(h => h.func_name))].sort();
 
             select.innerHTML = `<option value="all">${t('allJobs')}</option>` +
-                names.map(n => `<option value="${esc(n)}">${esc(n)}</option>`).join('');
+                names.map(n => {
+                    const sample = data.history.find(h => h.func_name === n);
+                    const label = sample && sample.job_name ? sample.job_name : n;
+                    return `<option value="${esc(n)}">${esc(label)}</option>`;
+                }).join('');
 
             if (names.includes(current) || current === 'all') {
                 select.value = current;

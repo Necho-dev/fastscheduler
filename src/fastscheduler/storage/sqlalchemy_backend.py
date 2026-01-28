@@ -18,8 +18,7 @@ try:
         create_engine,
         select,
     )
-    from sqlalchemy.ext.declarative import declarative_base
-    from sqlalchemy.orm import Session, sessionmaker
+    from sqlalchemy.orm import declarative_base, Session, sessionmaker
 except ImportError as e:
     raise ImportError(
         "SQLAlchemy storage requires sqlalchemy. "

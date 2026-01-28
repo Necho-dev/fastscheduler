@@ -97,10 +97,11 @@ app.include_router(
 ```python
 import requests
 
-# Interval job: Every 60 seconds
+# Interval job: Every 60 seconds, with a human-friendly job_name
 requests.post("http://localhost:8000/scheduler/api/jobs", json={
     "func_name": "my_task",
     "func_module": "__main__",
+    "job_name": "hourly_cleanup",  # Shown in dashboard to distinguish tasks using the same function
     "schedule_type": "interval",
     "schedule_config": {
         "interval": 60,

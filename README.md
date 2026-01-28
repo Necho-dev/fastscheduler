@@ -314,6 +314,7 @@ Create a new scheduled job via API.
 |-------|------|----------|-------------|
 | `func_name` | string | Yes | Function name (must be registered) |
 | `func_module` | string | Yes | Function module path (e.g., `"dev.test_app"`, `"__main__"`) |
+| `job_name` | string | No | Human-friendly job name, useful to distinguish multiple tasks using the same function (e.g., different scripts) |
 | `schedule_type` | string | Yes | Schedule type: `"interval"`, `"daily"`, `"weekly"`, `"hourly"`, `"cron"`, or `"once"` |
 | `schedule_config` | object | Yes | Schedule configuration (see examples below) |
 | `max_retries` | integer | No | Maximum retry attempts (default: 3) |

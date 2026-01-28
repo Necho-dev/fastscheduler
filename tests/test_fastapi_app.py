@@ -15,6 +15,8 @@ import sys
 import time
 from pathlib import Path
 
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.responses import HTMLResponse
 
@@ -37,11 +39,25 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Initialize FastAPI app
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Lifespan handler to start and stop the scheduler without using deprecated on_event hooks."""
+    logger.info("Starting FastScheduler...")
+    scheduler.start()
+    try:
+        yield
+    finally:
+        logger.info("Stopping FastScheduler...")
+        scheduler.stop(wait=True)
+        logger.info("FastScheduler stopped")
+
+
+# Initialize FastAPI app with lifespan instead of deprecated on_event hooks
 app = FastAPI(
     title="FastScheduler Test Application",
     description="Test application for FastScheduler with all new features",
-    version="0.3.0"
+    version="0.3.0",
+    lifespan=lifespan,
 )
 
 # ==================== Test Task Functions ====================
@@ -360,12 +376,8 @@ async def root():
     )
 
 
-@app.on_event("startup")
-async def startup_event():
-    """Start the scheduler when the app starts."""
-    logger.info("Starting FastScheduler...")
-    scheduler.start()
-    
+async def _create_example_jobs():
+    """Create example jobs for all supported schedule types."""
     # Create comprehensive test jobs covering all scheduling types
     try:
         # ==================== Group 1: "data_sync" - 数据同步业务组 ====================
@@ -628,14 +640,6 @@ async def startup_event():
         
     except Exception as e:
         logger.error(f"Failed to create example jobs: {e}", exc_info=True)
-
-
-@app.on_event("shutdown")
-async def shutdown_event():
-    """Stop the scheduler when the app shuts down."""
-    logger.info("Stopping FastScheduler...")
-    scheduler.stop(wait=True)
-    logger.info("FastScheduler stopped")
 
 
 if __name__ == "__main__":

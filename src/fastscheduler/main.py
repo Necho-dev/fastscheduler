@@ -353,7 +353,12 @@ class FastScheduler:
                 return
 
             self._queue.push(job)
-            self._log_history(job.job_id, job.func_name, JobStatus.SCHEDULED)
+            self._log_history(
+                job.job_id,
+                job.func_name,
+                JobStatus.SCHEDULED,
+                job_name=job.job_name or job.func_name,
+            )
 
             schedule_desc = job.get_schedule_description()
             if not self.quiet:
@@ -370,10 +375,12 @@ class FastScheduler:
         run_count: int = 0,
         retry_count: int = 0,
         execution_time: Optional[float] = None,
+        job_name: Optional[str] = None,
     ):
         """Log job events to history."""
         history_entry = JobHistory(
             job_id=job_id,
+            job_name=job_name,
             func_name=func_name,
             status=status.value,
             timestamp=time.time(),
@@ -614,6 +621,7 @@ class FastScheduler:
             JobStatus.RUNNING,
             run_count=job.run_count,
             retry_count=job.retry_count,
+            job_name=job.job_name or job.func_name,
         )
 
         start_time = time.time()
@@ -658,6 +666,7 @@ class FastScheduler:
                 run_count=job.run_count,
                 retry_count=job.retry_count,
                 execution_time=execution_time,
+                job_name=job.job_name or job.func_name,
             )
 
             if not self.quiet:
@@ -694,6 +703,7 @@ class FastScheduler:
                     run_count=job.run_count,
                     retry_count=job.retry_count,
                     execution_time=execution_time,
+                    job_name=job.job_name or job.func_name,
                 )
             else:
                 job.status = JobStatus.FAILED
@@ -710,6 +720,7 @@ class FastScheduler:
                     run_count=job.run_count,
                     retry_count=job.retry_count,
                     execution_time=execution_time,
+                    job_name=job.job_name or job.func_name,
                 )
 
         finally:
@@ -852,6 +863,7 @@ class FastScheduler:
         args: tuple = (),
         kwargs: dict = None,
         group: str = "default",
+        job_name: Optional[str] = None,
     ) -> Optional[str]:
         """
         Create a new scheduled job via API.
@@ -899,6 +911,7 @@ class FastScheduler:
                 job = Job(
                     job_id=self._next_job_id(),
                     func=func,
+                    job_name=job_name or func_name,
                     func_name=func_name,
                     func_module=func_module,
                     next_run=next_run,
@@ -929,6 +942,7 @@ class FastScheduler:
                 job = Job(
                     job_id=self._next_job_id(),
                     func=func,
+                    job_name=job_name or func_name,
                     func_name=func_name,
                     func_module=func_module,
                     next_run=next_run_dt.timestamp(),
@@ -980,6 +994,7 @@ class FastScheduler:
                 job = Job(
                     job_id=self._next_job_id(),
                     func=func,
+                    job_name=job_name or func_name,
                     func_name=func_name,
                     func_module=func_module,
                     next_run=next_run_dt.timestamp(),
@@ -1018,6 +1033,7 @@ class FastScheduler:
                 job = Job(
                     job_id=self._next_job_id(),
                     func=func,
+                    job_name=job_name or func_name,
                     func_name=func_name,
                     func_module=func_module,
                     next_run=next_run_dt.timestamp(),
@@ -1056,6 +1072,7 @@ class FastScheduler:
                 job = Job(
                     job_id=self._next_job_id(),
                     func=func,
+                    job_name=job_name or func_name,
                     func_name=func_name,
                     func_module=func_module,
                     next_run=next_run_dt.timestamp(),
@@ -1088,6 +1105,7 @@ class FastScheduler:
                 job = Job(
                     job_id=self._next_job_id(),
                     func=func,
+                    job_name=job_name or func_name,
                     func_name=func_name,
                     func_module=func_module,
                     next_run=next_run,
@@ -1235,6 +1253,7 @@ class FastScheduler:
             return [
                 {
                     "job_id": job.job_id,
+                    "job_name": job.job_name or job.func_name,
                     "func_name": job.func_name,
                     "group": job.group,
                     "status": (
@@ -1312,7 +1331,12 @@ class FastScheduler:
             if job_to_cancel:
                 removed = self._queue.remove(job_id)
                 if removed:
-                    self._log_history(job_id, job_to_cancel.func_name, JobStatus.COMPLETED)
+                    self._log_history(
+                        job_id,
+                        job_to_cancel.func_name,
+                        JobStatus.COMPLETED,
+                        job_name=job_to_cancel.job_name or job_to_cancel.func_name,
+                    )
                     if not self.quiet:
                         logger.info(f"Cancelled job: {job_to_cancel.func_name} ({job_id})")
                     self._save_state_async()
@@ -1329,7 +1353,12 @@ class FastScheduler:
             for job in all_jobs:
                 if job.func_name == func_name:
                     jobs_to_remove.append(job.job_id)
-                    self._log_history(job.job_id, job.func_name, JobStatus.COMPLETED)
+                    self._log_history(
+                        job.job_id,
+                        job.func_name,
+                        JobStatus.COMPLETED,
+                        job_name=job.job_name or job.func_name,
+                    )
                     cancelled += 1
 
             if cancelled > 0:
@@ -1408,6 +1437,7 @@ class FastScheduler:
                 if job.job_id == job_id:
                     return {
                         "job_id": job.job_id,
+                        "job_name": job.job_name or job.func_name,
                         "func_name": job.func_name,
                         "group": job.group,
                         "status": (
@@ -1443,7 +1473,10 @@ class FastScheduler:
         """
         with self.lock:
             all_jobs = self._queue.get_all()
-            groups = sorted(set(job.group for job in all_jobs if job.group))
+            groups_set = set(job.group for job in all_jobs if job.group)
+            # Always include the default group so callers can rely on its presence
+            groups_set.add("default")
+            groups = sorted(groups_set)
             return groups
 
     def get_jobs_by_group(self, group: str) -> List[Dict]:
@@ -1475,7 +1508,12 @@ class FastScheduler:
             cancelled = 0
             for job in jobs_to_cancel:
                 if self._queue.remove(job.job_id):
-                    self._log_history(job.job_id, job.func_name, JobStatus.COMPLETED)
+                    self._log_history(
+                        job.job_id,
+                        job.func_name,
+                        JobStatus.COMPLETED,
+                        job_name=job.job_name or job.func_name,
+                    )
                     cancelled += 1
             
             if cancelled > 0:

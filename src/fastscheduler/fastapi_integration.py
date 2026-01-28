@@ -30,6 +30,10 @@ class JobCreateRequest(BaseModel):
 
     func_name: str = Field(..., description="Function name (must be registered)")
     func_module: str = Field(..., description="Function module (must be registered)")
+    job_name: Optional[str] = Field(
+        default=None,
+        description="Optional business job name for distinguishing tasks sharing the same function",
+    )
     schedule_type: str = Field(
         ..., description="Schedule type: interval/daily/weekly/hourly/cron/once"
     )
@@ -337,6 +341,7 @@ def create_scheduler_routes(
                 func_name=request.func_name,
                 func_module=request.func_module,
                 group=request.group,
+                job_name=request.job_name,
                 schedule_type=request.schedule_type,
                 schedule_config=request.schedule_config,
                 max_retries=request.max_retries,
@@ -356,9 +361,16 @@ def create_scheduler_routes(
             else:
                 raise HTTPException(
                     status_code=400,
-                    detail=f"Failed to create job. Make sure function {request.func_module}.{request.func_name} is registered.",
+                    detail=(
+                        "Failed to create job. Make sure function "
+                        f"{request.func_module}.{request.func_name} is registered."
+                    ),
                 )
+        except HTTPException:
+            # Raise the HTTP exception
+            raise
         except Exception as e:
+            # Raise other errors as 500 and log them
             logger.error(f"Error creating job: {e}", exc_info=True)
             raise HTTPException(status_code=500, detail=f"Failed to create job: {str(e)}")
 
