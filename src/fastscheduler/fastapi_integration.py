@@ -87,20 +87,6 @@ def create_scheduler_routes(scheduler: "FastScheduler", prefix: str = "/schedule
     """
     router = APIRouter(prefix=prefix, tags=["scheduler"])
 
-    async def interruptible_sleep(duration: float, check_interval: float = 0.1) -> bool:
-        """
-        Sleep for the specified duration, but check stop event periodically.
-        Returns True if stopped, False if completed normally.
-        """
-        elapsed = 0.0
-        while elapsed < duration:
-            if scheduler._sse_stop_event.is_set():
-                return True
-            sleep_time = min(check_interval, duration - elapsed)
-            await asyncio.sleep(sleep_time)
-            elapsed += sleep_time
-        return False
-
     async def event_generator() -> AsyncGenerator[str, None]:
         """Generate SSE events for real-time updates"""
         while True:
@@ -108,7 +94,7 @@ def create_scheduler_routes(scheduler: "FastScheduler", prefix: str = "/schedule
                 # Check if scheduler has been stopped
                 if scheduler._sse_stop_event.is_set():
                     logger.info("SSE connection closed due to scheduler stop")
-                    break
+                    return
 
                 # Get current state
                 stats = scheduler.get_statistics()
@@ -129,11 +115,18 @@ def create_scheduler_routes(scheduler: "FastScheduler", prefix: str = "/schedule
                 # Send as SSE event
                 yield f"data: {json.dumps(data)}\n\n"
 
-                # Use interruptible sleep to check stop event periodically
-                stopped = await interruptible_sleep(1.0, check_interval=0.1)
-                if stopped:
+                # Check immediately after yield (before sleep) for faster response
+                if scheduler._sse_stop_event.is_set():
                     logger.info("SSE connection closed due to scheduler stop")
-                    break
+                    return
+
+                # Use very short sleep intervals with frequent checks for immediate response
+                # This ensures we can respond to stop signals within 10ms
+                for _ in range(100):  # 100 * 0.01s = 1 second total
+                    if scheduler._sse_stop_event.is_set():
+                        logger.info("SSE connection closed due to scheduler stop")
+                        return  # Use return instead of break to exit generator immediately
+                    await asyncio.sleep(0.01)
 
             except asyncio.CancelledError:
                 # Clean shutdown - don't log as error
@@ -148,12 +141,13 @@ def create_scheduler_routes(scheduler: "FastScheduler", prefix: str = "/schedule
                 # Check stop event before retrying
                 if scheduler._sse_stop_event.is_set():
                     logger.info("SSE connection closed due to scheduler stop")
-                    break
-                # Use interruptible sleep for error recovery too
-                stopped = await interruptible_sleep(1.0, check_interval=0.1)
-                if stopped:
-                    logger.info("SSE connection closed due to scheduler stop")
-                    break
+                    return
+                # Use short sleep intervals for error recovery too
+                for _ in range(100):
+                    if scheduler._sse_stop_event.is_set():
+                        logger.info("SSE connection closed due to scheduler stop")
+                        return
+                    await asyncio.sleep(0.01)
 
     @router.get("/events")
     async def events():
