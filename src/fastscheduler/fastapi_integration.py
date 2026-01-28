@@ -1,3 +1,4 @@
+import anyio
 import asyncio
 import importlib.resources
 import json
@@ -5,7 +6,7 @@ import logging
 from typing import TYPE_CHECKING, AsyncGenerator, Optional, List, Dict, Any
 
 try:
-    from fastapi import APIRouter, HTTPException, Body
+    from fastapi import APIRouter, HTTPException, Body, Request
     from fastapi.responses import HTMLResponse, StreamingResponse
     from pydantic import BaseModel, Field
 except ImportError as e:
@@ -87,49 +88,58 @@ def create_scheduler_routes(scheduler: "FastScheduler", prefix: str = "/schedule
     """
     router = APIRouter(prefix=prefix, tags=["scheduler"])
 
-    async def event_generator() -> AsyncGenerator[str, None]:
+    async def event_generator(request: Request) -> AsyncGenerator[str, None]:
         """Generate SSE events for real-time updates"""
-        while True:
-            try:
-                # Get current state
-                stats = scheduler.get_statistics()
-                jobs = scheduler.get_jobs()
-                history = scheduler.get_history(limit=50)
-                dead_letters = scheduler.get_dead_letters(limit=100)
+        try:
+            while True:
+                # Check if the client has closed the connection
+                if request.is_disconnected():
+                    logger.debug("SSE connection closed by client")
+                    break
 
-                # Prepare data
-                data = {
-                    "running": scheduler.running,
-                    "stats": stats,
-                    "jobs": jobs,
-                    "history": history,
-                    "dead_letters": dead_letters,
-                    "dead_letter_count": len(scheduler.dead_letters),
-                }
+                try:
+                    # Get current state
+                    stats = scheduler.get_statistics()
+                    jobs = scheduler.get_jobs()
+                    history = scheduler.get_history(limit=50)
+                    dead_letters = scheduler.get_dead_letters(limit=100)
 
-                # Send as SSE event
-                yield f"data: {json.dumps(data)}\n\n"
+                    # Prepare data
+                    data = {
+                        "running": scheduler.running,
+                        "stats": stats,
+                        "jobs": jobs,
+                        "history": history,
+                        "dead_letters": dead_letters,
+                        "dead_letter_count": len(scheduler.dead_letters),
+                    }
+
+                    # Send as SSE event
+                    yield f"data: {json.dumps(data)}\n\n"
+
+                except Exception as e:
+                    # Log the actual error with context
+                    logger.error(
+                        f"Error in SSE event generator: {type(e).__name__}: {e}",
+                        exc_info=True,
+                    )
 
                 # Update every second
-                await asyncio.sleep(1)
-            except asyncio.CancelledError:
-                # Clean shutdown - don't log as error
-                logger.debug("SSE connection closed by client")
-                raise
-            except Exception as e:
-                # Log the actual error with context
-                logger.error(
-                    f"Error in SSE event generator: {type(e).__name__}: {e}",
-                    exc_info=True,
-                )
-                # Wait before retrying to prevent tight error loops
-                await asyncio.sleep(1)
+                await anyio.sleep(1)
+
+        except (anyio.get_cancelled_exc_class(), asyncio.CancelledError):
+            # Clean shutdown
+            logger.debug("SSE connection explicitly cancelled for shutdown")
+            # Raise an exception to close the connection
+            raise
+        finally:
+            logger.debug("SSE event generator exited safely")
 
     @router.get("/events")
-    async def events():
+    async def events(request: Request):
         """SSE endpoint for real-time updates"""
         return StreamingResponse(
-            event_generator(),
+            event_generator(request),
             media_type="text/event-stream",
             headers={
                 "Cache-Control": "no-cache",
