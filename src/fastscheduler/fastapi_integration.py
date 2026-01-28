@@ -95,11 +95,14 @@ def create_scheduler_routes(scheduler: "FastScheduler", prefix: str = "/schedule
             async with anyio.create_task_group() as tg:
                 # Task A: Watch for SIGINT and SIGTERM
                 async def signal_watcher():
-                    async with anyio.open_signal_receiver(signal.SIGINT, signal.SIGTERM) as signals:
-                        async for _ in signals:
-                            logger.info("SSE detected system interrupt signal, starting shutdown process")
-                            tg.cancel_scope.cancel()
-                            return
+                    try:
+                        with anyio.open_signal_receiver(signal.SIGINT, signal.SIGTERM) as signals:
+                            async for _ in signals:
+                                logger.info("SSE detected system interrupt signal, starting shutdown process")
+                                tg.cancel_scope.cancel()
+                                return
+                    except Exception as e:
+                        logger.error(f"Error in Signal watcher: {e}", exc_info=True)
                 
                 tg.start_soon(signal_watcher)
                 
