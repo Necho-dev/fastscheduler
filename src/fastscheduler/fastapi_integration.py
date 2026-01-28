@@ -3,6 +3,7 @@ import asyncio
 import importlib.resources
 import json
 import logging
+from functools import partial
 from typing import TYPE_CHECKING, AsyncGenerator, Optional, List, Dict, Any
 
 try:
@@ -19,6 +20,17 @@ if TYPE_CHECKING:
     from .main import FastScheduler
 
 logger = logging.getLogger("fastscheduler")
+
+
+class FastStreamingResponse(StreamingResponse):
+    async def __call__(self, scope, receive, send) -> None:
+        async with anyio.create_task_group() as task_group:
+            async def wrap(func):
+                await func()
+                task_group.cancel_scope.cancel()
+
+            # 只运行发送逻辑，不引入阻塞的 receive() 监听
+            await wrap(partial(self.stream_response, send))
 
 
 # Pydantic models for API requests/responses
@@ -138,7 +150,7 @@ def create_scheduler_routes(scheduler: "FastScheduler", prefix: str = "/schedule
     @router.get("/events")
     async def events(request: Request):
         """SSE endpoint for real-time updates"""
-        return StreamingResponse(
+        return FastStreamingResponse(
             event_generator(request),
             media_type="text/event-stream",
             headers={
