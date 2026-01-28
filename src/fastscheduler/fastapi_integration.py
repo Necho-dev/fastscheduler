@@ -93,7 +93,7 @@ def create_scheduler_routes(scheduler: "FastScheduler", prefix: str = "/schedule
         try:
             while True:
                 # Check if the client has closed the connection
-                if request.is_disconnected():
+                if await request.is_disconnected():
                     logger.debug("SSE connection closed by client")
                     break
 
