@@ -7,6 +7,8 @@ requires-python = ">=3.10"
 license = { text = "MIT" }
 authors = [
     { name = "Michiel Meire", email = "michiel.meire1@gmail.com" },
+]
+maintainers = [
     { name = "Cody Li", email = "coooudyli@gmail.com" },
 ]
 keywords = ["scheduler", "cron", "task", "async", "background", "jobs"]

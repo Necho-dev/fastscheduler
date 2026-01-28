@@ -91,6 +91,11 @@ def create_scheduler_routes(scheduler: "FastScheduler", prefix: str = "/schedule
         """Generate SSE events for real-time updates"""
         while True:
             try:
+                # Check if scheduler has been stopped
+                if scheduler._sse_stop_event.is_set():
+                    logger.debug("SSE connection closed due to scheduler stop")
+                    break
+
                 # Get current state
                 stats = scheduler.get_statistics()
                 jobs = scheduler.get_jobs()
@@ -110,6 +115,11 @@ def create_scheduler_routes(scheduler: "FastScheduler", prefix: str = "/schedule
                 # Send as SSE event
                 yield f"data: {json.dumps(data)}\n\n"
 
+                # Check stop event before sleeping to ensure timely response
+                if scheduler._sse_stop_event.is_set():
+                    logger.debug("SSE connection closed due to scheduler stop")
+                    break
+
                 # Update every second
                 await asyncio.sleep(1)
             except asyncio.CancelledError:
@@ -122,6 +132,10 @@ def create_scheduler_routes(scheduler: "FastScheduler", prefix: str = "/schedule
                     f"Error in SSE event generator: {type(e).__name__}: {e}",
                     exc_info=True,
                 )
+                # Check stop event before retrying
+                if scheduler._sse_stop_event.is_set():
+                    logger.debug("SSE connection closed due to scheduler stop")
+                    break
                 # Wait before retrying to prevent tight error loops
                 await asyncio.sleep(1)
 
