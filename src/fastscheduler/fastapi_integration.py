@@ -1,4 +1,5 @@
 import anyio
+import signal
 import asyncio
 import importlib.resources
 import json
@@ -91,48 +92,54 @@ def create_scheduler_routes(scheduler: "FastScheduler", prefix: str = "/schedule
     async def event_generator(request: Request) -> AsyncGenerator[str, None]:
         """Generate SSE events for real-time updates"""
         try:
-            while True:
-                # Check if the client has closed the connection
-                if await request.is_disconnected():
-                    logger.debug("SSE connection closed by client")
-                    break
+            with anyio.open_signal_receiver(signal.SIGINT, signal.SIGTERM) as signals:
+                while True:
+                    # Check if the client has closed the connection
+                    if await request.is_disconnected():
+                        logger.debug("SSE connection closed by client")
+                        break
+                    
+                    async with anyio.move_on_after(1):
+                        async for sig in signals:
+                            scheduler._shutdown_event_set = True
+                            break
 
-                # Check if scheduler is shutting down
-                if scheduler.is_shutdown_requested():
-                    # Send shutdown signal to client
-                    yield "event: shutdown\ndata: bye\n\n"
-                    logger.info("Sent shutdown signal to client")
-                    break
+                    # Check if scheduler is shutting down
+                    if scheduler.is_shutdown_requested():
+                        # Send shutdown signal to client
+                        yield "event: shutdown\ndata: bye\n\n"
+                        logger.info("Sent shutdown signal to client")
+                        break
 
-                try:
-                    # Get current state
-                    stats = scheduler.get_statistics()
-                    jobs = scheduler.get_jobs()
-                    history = scheduler.get_history(limit=50)
-                    dead_letters = scheduler.get_dead_letters(limit=100)
+                    try:
+                        # Get current state
+                        stats = scheduler.get_statistics()
+                        jobs = scheduler.get_jobs()
+                        history = scheduler.get_history(limit=50)
+                        dead_letters = scheduler.get_dead_letters(limit=100)
 
-                    # Prepare data
-                    data = {
-                        "running": scheduler.running,
-                        "stats": stats,
-                        "jobs": jobs,
-                        "history": history,
-                        "dead_letters": dead_letters,
-                        "dead_letter_count": len(scheduler.dead_letters),
-                    }
+                        # Prepare data
+                        data = {
+                            "running": scheduler.running,
+                            "stats": stats,
+                            "jobs": jobs,
+                            "history": history,
+                            "dead_letters": dead_letters,
+                            "dead_letter_count": len(scheduler.dead_letters),
+                        }
 
-                    # Send as SSE event
-                    yield f"data: {json.dumps(data)}\n\n"
+                        # Send as SSE event
+                        yield f"data: {json.dumps(data)}\n\n"
 
-                except Exception as e:
-                    # Log the actual error with context
-                    logger.error(
-                        f"Error in SSE event generator: {type(e).__name__}: {e}",
-                        exc_info=True,
-                    )
+                    except Exception as e:
+                        # Log the actual error with context
+                        logger.error(
+                            f"Error in SSE event generator: {type(e).__name__}: {e}",
+                            exc_info=True,
+                        )
 
-                # Update every second
-                await anyio.sleep(1)
+                    # Update every second
+                    await anyio.sleep(1)
 
         except (anyio.get_cancelled_exc_class(), asyncio.CancelledError):
             # Clean shutdown
