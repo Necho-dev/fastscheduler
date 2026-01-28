@@ -87,13 +87,27 @@ def create_scheduler_routes(scheduler: "FastScheduler", prefix: str = "/schedule
     """
     router = APIRouter(prefix=prefix, tags=["scheduler"])
 
+    async def interruptible_sleep(duration: float, check_interval: float = 0.1) -> bool:
+        """
+        Sleep for the specified duration, but check stop event periodically.
+        Returns True if stopped, False if completed normally.
+        """
+        elapsed = 0.0
+        while elapsed < duration:
+            if scheduler._sse_stop_event.is_set():
+                return True
+            sleep_time = min(check_interval, duration - elapsed)
+            await asyncio.sleep(sleep_time)
+            elapsed += sleep_time
+        return False
+
     async def event_generator() -> AsyncGenerator[str, None]:
         """Generate SSE events for real-time updates"""
         while True:
             try:
                 # Check if scheduler has been stopped
                 if scheduler._sse_stop_event.is_set():
-                    logger.debug("SSE connection closed due to scheduler stop")
+                    logger.info("SSE connection closed due to scheduler stop")
                     break
 
                 # Get current state
@@ -115,13 +129,12 @@ def create_scheduler_routes(scheduler: "FastScheduler", prefix: str = "/schedule
                 # Send as SSE event
                 yield f"data: {json.dumps(data)}\n\n"
 
-                # Check stop event before sleeping to ensure timely response
-                if scheduler._sse_stop_event.is_set():
-                    logger.debug("SSE connection closed due to scheduler stop")
+                # Use interruptible sleep to check stop event periodically
+                stopped = await interruptible_sleep(1.0, check_interval=0.1)
+                if stopped:
+                    logger.info("SSE connection closed due to scheduler stop")
                     break
 
-                # Update every second
-                await asyncio.sleep(1)
             except asyncio.CancelledError:
                 # Clean shutdown - don't log as error
                 logger.debug("SSE connection closed by client")
@@ -134,10 +147,13 @@ def create_scheduler_routes(scheduler: "FastScheduler", prefix: str = "/schedule
                 )
                 # Check stop event before retrying
                 if scheduler._sse_stop_event.is_set():
-                    logger.debug("SSE connection closed due to scheduler stop")
+                    logger.info("SSE connection closed due to scheduler stop")
                     break
-                # Wait before retrying to prevent tight error loops
-                await asyncio.sleep(1)
+                # Use interruptible sleep for error recovery too
+                stopped = await interruptible_sleep(1.0, check_interval=0.1)
+                if stopped:
+                    logger.info("SSE connection closed due to scheduler stop")
+                    break
 
     @router.get("/events")
     async def events():
