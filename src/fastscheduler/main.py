@@ -120,7 +120,6 @@ class FastScheduler:
         self.running = False
         self.thread: Optional[threading.Thread] = None
         self.lock = threading.RLock()
-        self._sse_stop_event = threading.Event()
         self._job_counter: Iterator[int] = itertools.count()
         self._job_counter_value = 0
         self.history: List[JobHistory] = []
@@ -389,7 +388,6 @@ class FastScheduler:
             return
 
         self.running = True
-        self._sse_stop_event.clear()
         self.stats["start_time"] = time.time()
 
         self._handle_missed_jobs()
@@ -412,7 +410,6 @@ class FastScheduler:
 
         logger.info("Stopping scheduler...")
         self.running = False
-        self._sse_stop_event.set()
 
         if wait and self.thread and self.thread.is_alive():
             self.thread.join(timeout=timeout)

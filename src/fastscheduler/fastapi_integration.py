@@ -91,11 +91,6 @@ def create_scheduler_routes(scheduler: "FastScheduler", prefix: str = "/schedule
         """Generate SSE events for real-time updates"""
         while True:
             try:
-                # Check if scheduler has been stopped
-                if scheduler._sse_stop_event.is_set():
-                    logger.info("SSE connection closed due to scheduler stop")
-                    return
-
                 # Get current state
                 stats = scheduler.get_statistics()
                 jobs = scheduler.get_jobs()
@@ -115,39 +110,20 @@ def create_scheduler_routes(scheduler: "FastScheduler", prefix: str = "/schedule
                 # Send as SSE event
                 yield f"data: {json.dumps(data)}\n\n"
 
-                # Check immediately after yield (before sleep) for faster response
-                if scheduler._sse_stop_event.is_set():
-                    logger.info("SSE connection closed due to scheduler stop")
-                    return
-
-                # Use very short sleep intervals with frequent checks for immediate response
-                # This ensures we can respond to stop signals within 10ms
-                for _ in range(100):  # 100 * 0.01s = 1 second total
-                    if scheduler._sse_stop_event.is_set():
-                        logger.info("SSE connection closed due to scheduler stop")
-                        return  # Use return instead of break to exit generator immediately
-                    await asyncio.sleep(0.01)
-
+                # Update every second
+                await asyncio.sleep(1)
             except asyncio.CancelledError:
                 # Clean shutdown - don't log as error
                 logger.debug("SSE connection closed by client")
-                break
+                raise
             except Exception as e:
                 # Log the actual error with context
                 logger.error(
                     f"Error in SSE event generator: {type(e).__name__}: {e}",
                     exc_info=True,
                 )
-                # Check stop event before retrying
-                if scheduler._sse_stop_event.is_set():
-                    logger.info("SSE connection closed due to scheduler stop")
-                    return
-                # Use short sleep intervals for error recovery too
-                for _ in range(100):
-                    if scheduler._sse_stop_event.is_set():
-                        logger.info("SSE connection closed due to scheduler stop")
-                        return
-                    await asyncio.sleep(0.01)
+                # Wait before retrying to prevent tight error loops
+                await asyncio.sleep(1)
 
     @router.get("/events")
     async def events():
