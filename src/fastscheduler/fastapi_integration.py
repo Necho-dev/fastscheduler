@@ -1,9 +1,9 @@
 import anyio
-import signal
 import asyncio
 import importlib.resources
 import json
 import logging
+import signal
 from typing import TYPE_CHECKING, AsyncGenerator, Optional, List, Dict, Any
 
 try:
@@ -20,6 +20,8 @@ if TYPE_CHECKING:
     from .main import FastScheduler
 
 logger = logging.getLogger("fastscheduler")
+
+_signal_handlers_installed = False
 
 
 # Pydantic models for API requests/responses
@@ -71,89 +73,133 @@ def _load_dashboard_template() -> str:
 </body></html>"""
 
 
-def create_scheduler_routes(scheduler: "FastScheduler", prefix: str = "/scheduler"):
+def install_shutdown_handlers(scheduler: "FastScheduler"):
+    """Install signal handlers for graceful SSE shutdown.
+    
+    Call this in FastAPI lifespan startup to enable graceful shutdown.
+    
+    Example:
+        @asynccontextmanager
+        async def lifespan(app: FastAPI):
+            install_shutdown_handlers(scheduler)
+            scheduler.start()
+            yield
+            await anyio.sleep(0.5)
+            scheduler.stop(wait=False)
+        
+        app = FastAPI(lifespan=lifespan)
+        app.include_router(
+            create_scheduler_routes(scheduler, install_signal_handlers=False)
+        )
+    
+    Args:
+        scheduler: FastScheduler instance
     """
-    Create FastAPI routes for scheduler management
+    global _signal_handlers_installed
+    
+    if _signal_handlers_installed:
+        logger.debug("Signal handlers already installed, skipping")
+        return
+    
+    original_sigint = signal.getsignal(signal.SIGINT)
+    original_sigterm = signal.getsignal(signal.SIGTERM)
+    
+    def handle_shutdown_signal(signum, frame):
+        try:
+            scheduler.shutdown_connection()
+            logger.info(f"Signal {signum} received, sent shutdown signal to SSE connections")
+        except Exception as e:
+            logger.error(f"Error sending shutdown signal: {e}")
+        
+        if callable(original_sigint) and signum == signal.SIGINT:
+            original_sigint(signum, frame)
+        elif callable(original_sigterm) and signum == signal.SIGTERM:
+            original_sigterm(signum, frame)
+        else:
+            raise KeyboardInterrupt() if signum == signal.SIGINT else SystemExit()
+    
+    signal.signal(signal.SIGINT, handle_shutdown_signal)
+    signal.signal(signal.SIGTERM, handle_shutdown_signal)
+    
+    _signal_handlers_installed = True
+    logger.debug("Installed signal handlers for graceful SSE shutdown")
+
+
+_install_signal_handlers = install_shutdown_handlers  # Backward compatibility
+
+
+def create_scheduler_routes(
+    scheduler: "FastScheduler", 
+    prefix: str = "/scheduler",
+    install_signal_handlers: bool = True
+):
+    """Create FastAPI routes for scheduler management.
+
+    Args:
+        scheduler: FastScheduler instance
+        prefix: URL prefix for routes (default: "/scheduler")
+        install_signal_handlers: Install signal handlers for graceful shutdown (default: True)
 
     Usage:
-        from fastapi import FastAPI
-        from fastscheduler import FastScheduler
-        from fastscheduler.fastapi_integration import create_scheduler_routes
-
         app = FastAPI()
         scheduler = FastScheduler()
-
         app.include_router(create_scheduler_routes(scheduler))
-
         scheduler.start()
+        
+    Note: Signal handlers will be installed automatically to ensure graceful SSE shutdown.
+    When Ctrl+C is pressed, the scheduler will signal all SSE connections to close
+    before Uvicorn begins waiting for connections to finish.
     """
+    # Install signal handlers for graceful shutdown
+    if install_signal_handlers:
+        _install_signal_handlers(scheduler)
+    
     router = APIRouter(prefix=prefix, tags=["scheduler"])
 
     async def event_generator(request: Request) -> AsyncGenerator[str, None]:
-        """Generate SSE events for real-time updates"""
+        """Generate SSE events for real-time updates."""
         try:
-            async with anyio.create_task_group() as tg:
-                # Task A: Watch for SIGINT and SIGTERM
-                async def signal_watcher():
-                    try:
-                        with anyio.open_signal_receiver(signal.SIGINT, signal.SIGTERM) as signals:
-                            async for _ in signals:
-                                logger.info("SSE detected system interrupt signal, starting shutdown process")
-                                tg.cancel_scope.cancel()
-                                return
-                    except Exception as e:
-                        logger.error(f"Error in Signal watcher: {e}", exc_info=True)
-                
-                tg.start_soon(signal_watcher)
-                
-                # Task B: Send SSE events
-                while True:
-                    # Check if the client has closed the connection
-                    if await request.is_disconnected():
-                        logger.debug("SSE connection closed by client")
-                        break
+            while True:
+                if await request.is_disconnected():
+                    logger.debug("SSE connection closed by client")
+                    break
 
-                    # Check if scheduler is shutting down
+                if scheduler.is_shutdown_requested():
+                    yield "event: shutdown\ndata: bye\n\n"
+                    logger.info("Sent shutdown signal to client")
+                    break
+
+                try:
+                    stats = scheduler.get_statistics()
+                    jobs = scheduler.get_jobs()
+                    history = scheduler.get_history(limit=50)
+                    dead_letters = scheduler.get_dead_letters(limit=100)
+
+                    data = {
+                        "running": scheduler.running,
+                        "stats": stats,
+                        "jobs": jobs,
+                        "history": history,
+                        "dead_letters": dead_letters,
+                        "dead_letter_count": len(scheduler.dead_letters),
+                    }
+
+                    yield f"data: {json.dumps(data)}\n\n"
+
+                except Exception as e:
+                    logger.error(
+                        f"Error in SSE event generator: {type(e).__name__}: {e}",
+                        exc_info=True,
+                    )
+
+                # Responsive sleep: check shutdown every 0.1s
+                for _ in range(10):
                     if scheduler.is_shutdown_requested():
-                        # Send shutdown signal to client
-                        yield "event: shutdown\ndata: bye\n\n"
-                        logger.info("Sent shutdown signal to client")
                         break
-
-                    try:
-                        # Get current state
-                        stats = scheduler.get_statistics()
-                        jobs = scheduler.get_jobs()
-                        history = scheduler.get_history(limit=50)
-                        dead_letters = scheduler.get_dead_letters(limit=100)
-
-                        # Prepare data
-                        data = {
-                            "running": scheduler.running,
-                            "stats": stats,
-                            "jobs": jobs,
-                            "history": history,
-                            "dead_letters": dead_letters,
-                            "dead_letter_count": len(scheduler.dead_letters),
-                        }
-
-                        # Send as SSE event
-                        yield f"data: {json.dumps(data)}\n\n"
-
-                    except Exception as e:
-                        # Log the actual error with context
-                        logger.error(
-                            f"Error in SSE event generator: {type(e).__name__}: {e}",
-                            exc_info=True,
-                        )
-
-                    # Update every second
-                    await anyio.sleep(1)
+                    await anyio.sleep(0.1)
 
         except (anyio.get_cancelled_exc_class(), asyncio.CancelledError):
-            # Clean shutdown
             logger.debug("SSE connection explicitly cancelled for shutdown")
-            # Raise an exception to close the connection
             raise
         finally:
             logger.debug("SSE event generator exited safely")

@@ -148,19 +148,9 @@ class FastScheduler:
             str(self.state_file).replace(".json", "_dead_letters.json")
         )
 
-        # Shutdown event for SSE graceful closure
-        if ANYIO_AVAILABLE:
-            try:
-                # Create an anyio Event for signaling shutdown
-                # We use a simple flag-based approach that works across async contexts
-                self._shutdown_event_set = False
-                self._shutdown_event_lock = threading.Lock()
-            except Exception:
-                self._shutdown_event_set = False
-                self._shutdown_event_lock = threading.Lock()
-        else:
-            self._shutdown_event_set = False
-            self._shutdown_event_lock = threading.Lock()
+        # Graceful shutdown coordination for SSE connections
+        self._shutdown_event_set = False
+        self._shutdown_event_lock = threading.Lock()
 
         self.stats = {
             "total_runs": 0,
@@ -175,8 +165,13 @@ class FastScheduler:
         if auto_start:
             self.start()
 
+    def shutdown_connection(self) -> None:
+        """Signal shutdown to external components (e.g. SSE connections)."""
+        with self._shutdown_event_lock:
+            self._shutdown_event_set = True
+
     def is_shutdown_requested(self) -> bool:
-        """Check if shutdown has been requested (for SSE graceful closure)."""
+        """Check if shutdown has been requested."""
         with self._shutdown_event_lock:
             return self._shutdown_event_set
 
@@ -435,11 +430,7 @@ class FastScheduler:
             return
 
         logger.info("Stopping scheduler...")
-        
-        # Signal shutdown event for SSE connections
-        with self._shutdown_event_lock:
-            self._shutdown_event_set = True
-        
+        self.shutdown_connection()
         self.running = False
 
         if wait and self.thread and self.thread.is_alive():

@@ -204,31 +204,84 @@ scheduler.cancel_job_by_name("my_task")
 
 ## FastAPI Integration
 
-Add a beautiful real-time dashboard and RESTful API to your FastAPI app:
+Add a beautiful real-time dashboard and RESTful API to your FastAPI app.
+
+### Basic Setup (Recommended)
+
+Use FastAPI's lifespan context manager for proper startup/shutdown handling:
 
 ```python
+from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastscheduler import FastScheduler
 from fastscheduler.fastapi_integration import create_scheduler_routes
 
-app = FastAPI()
 scheduler = FastScheduler(quiet=True)
 
-# Register functions before creating routes
+# Register your task functions
 def my_task():
     print("Task executed")
 
 scheduler.register_function(my_task)
 
-# Add dashboard and API routes at /scheduler/
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Startup: Start the scheduler
+    scheduler.start()
+    yield
+    # Shutdown: Stop the scheduler
+    scheduler.stop(wait=False)
+
+app = FastAPI(lifespan=lifespan)
+
+# Add dashboard and API routes
 app.include_router(create_scheduler_routes(scheduler, prefix="/scheduler"))
 
+# Schedule tasks
 @scheduler.every(30).seconds
 def background_task():
     print("Background work")
-
-scheduler.start()
 ```
+
+**Dashboard:** Visit `http://localhost:8000/scheduler/` to see the real-time monitoring UI.
+
+### Graceful Shutdown with SSE (Advanced)
+
+For applications using the SSE-based dashboard, ensure graceful shutdown when pressing Ctrl+C:
+
+```python
+from contextlib import asynccontextmanager
+import anyio
+from fastapi import FastAPI
+from fastscheduler import FastScheduler
+from fastscheduler.fastapi_integration import create_scheduler_routes, install_shutdown_handlers
+
+scheduler = FastScheduler()
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Startup
+    install_shutdown_handlers(scheduler)  # Enable graceful SSE shutdown
+    scheduler.start()
+    yield
+    # Shutdown
+    await anyio.sleep(0.5)  # Brief grace period for SSE connections
+    scheduler.stop(wait=False)
+
+app = FastAPI(lifespan=lifespan)
+
+# Important: Disable auto-install since we're doing it manually in lifespan
+app.include_router(
+    create_scheduler_routes(scheduler, install_signal_handlers=False)
+)
+```
+
+**Why?** This ensures that when you press Ctrl+C:
+1. SSE connections receive a shutdown signal
+2. Frontend closes connections gracefully
+3. Uvicorn completes shutdown in ~1 second (not 30 seconds timeout)
+
+See [FastAPI Quick Start Guide](docs/FASTAPI_QUICKSTART.md) for details.
 
 ## RESTful API Documentation
 
