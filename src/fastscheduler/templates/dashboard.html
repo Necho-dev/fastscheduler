@@ -870,6 +870,7 @@
                             <tr>
                                 <th id="th-history-status"></th>
                                 <th id="th-history-job"></th>
+                                <th id="th-history-group"></th>
                                 <th id="th-history-time"></th>
                                 <th id="th-history-duration"></th>
                                 <th id="th-history-details"></th>
@@ -902,6 +903,7 @@
                             <tr>
                                 <th id="th-failed-time"></th>
                                 <th id="th-failed-job"></th>
+                                <th id="th-failed-group"></th>
                                 <th id="th-failed-error"></th>
                                 <th id="th-failed-run"></th>
                                 <th id="th-failed-retries"></th>
@@ -1146,11 +1148,13 @@
             // History table headers
             const thHistoryStatus = document.getElementById('th-history-status');
             const thHistoryJob = document.getElementById('th-history-job');
+            const thHistoryGroup = document.getElementById('th-history-group');
             const thHistoryTime = document.getElementById('th-history-time');
             const thHistoryDuration = document.getElementById('th-history-duration');
             const thHistoryDetails = document.getElementById('th-history-details');
             if (thHistoryStatus) thHistoryStatus.textContent = t('status');
             if (thHistoryJob) thHistoryJob.textContent = t('job');
+            if (thHistoryGroup) thHistoryGroup.textContent = t('group');
             if (thHistoryTime) thHistoryTime.textContent = t('time');
             if (thHistoryDuration) thHistoryDuration.textContent = t('duration');
             if (thHistoryDetails) thHistoryDetails.textContent = t('details');
@@ -1158,12 +1162,14 @@
             // Failed table headers
             const thFailedTime = document.getElementById('th-failed-time');
             const thFailedJob = document.getElementById('th-failed-job');
+            const thFailedGroup = document.getElementById('th-failed-group');
             const thFailedError = document.getElementById('th-failed-error');
             const thFailedRun = document.getElementById('th-failed-run');
             const thFailedRetries = document.getElementById('th-failed-retries');
             const thFailedDuration = document.getElementById('th-failed-duration');
             if (thFailedTime) thFailedTime.textContent = t('time');
             if (thFailedJob) thFailedJob.textContent = t('job');
+            if (thFailedGroup) thFailedGroup.textContent = t('group');
             if (thFailedError) thFailedError.textContent = t('error');
             if (thFailedRun) thFailedRun.textContent = t('runNumber');
             if (thFailedRetries) thFailedRetries.textContent = t('retries');
@@ -1562,7 +1568,7 @@
 
             const tbody = document.getElementById('history-tbody');
             if (history.length === 0) {
-                tbody.innerHTML = `<tr><td colspan="5" class="empty-state">${t('noHistoryEntries')}</td></tr>`;
+                tbody.innerHTML = `<tr><td colspan="6" class="empty-state">${t('noHistoryEntries')}</td></tr>`;
                 return;
             }
 
@@ -1577,12 +1583,15 @@
                 };
                 const statusText = statusMap[h.status] || h.status;
                 const displayName = h.job_name || h.func_name;
+                const jobForHistory = (data.jobs || []).find(j => j.job_id === h.job_id);
+                const group = jobForHistory ? (jobForHistory.group || 'default') : (h.group || '');
                 return `
                 <tr>
                     <td><span class="history-status ${h.status}">${statusText}</span></td>
                     <td>
                         <div class="history-job" title="${esc(h.func_name)}">${esc(displayName)}</div>
                     </td>
+                    <td><span class="history-group" style="font-size:11px;color:var(--text-secondary);">${esc(group)}</span></td>
                     <td><span class="history-time">${h.timestamp_readable || formatTs(h.timestamp)}</span></td>
                     <td><span class="history-duration">${h.execution_time ? h.execution_time.toFixed(2) + 's' : '-'}</span></td>
                     <td>${h.error
@@ -1609,18 +1618,21 @@
 
             const tbody = document.getElementById('failed-tbody');
             if (deadLetters.length === 0) {
-                tbody.innerHTML = `<tr><td colspan="6" class="empty-state">${t('noFailedJobs')}</td></tr>`;
+                tbody.innerHTML = `<tr><td colspan="7" class="empty-state">${t('noFailedJobs')}</td></tr>`;
                 return;
             }
 
             tbody.innerHTML = deadLetters.map(dl => {
                 const displayName = dl.job_name || dl.func_name;
+                const jobForDeadLetter = (data.jobs || []).find(j => j.job_id === dl.job_id);
+                const group = jobForDeadLetter ? (jobForDeadLetter.group || 'default') : (dl.group || '');
                 return `
                 <tr>
                     <td><span class="history-time">${dl.timestamp_readable || formatTs(dl.timestamp)}</span></td>
                     <td>
                         <div class="history-job" title="${esc(dl.func_name)}">${esc(displayName)}</div>
                     </td>
+                    <td><span class="history-group" style="font-size:11px;color:var(--text-secondary);">${esc(group)}</span></td>
                     <td><span class="history-error" title="${esc(dl.error || '')}">${esc(dl.error || t('unknownError'))}</span></td>
                     <td><span style="color:var(--text-secondary)">${t('runNumber')} ${dl.run_count || '-'}</span></td>
                     <td><span style="color:var(--text-secondary)">${dl.retry_count || 0}</span></td>
