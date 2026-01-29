@@ -26,6 +26,7 @@ except ImportError as e:
     ) from e
 
 from .base import StorageBackend
+from .schema_migration import ensure_schema, SCHEMA_SQLALCHEMY
 
 logger = logging.getLogger("fastscheduler")
 
@@ -39,6 +40,7 @@ class SchedulerJob(Base):
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     job_id = Column(String, unique=True, nullable=False, index=True)
+    job_name = Column(String, nullable=True, default="")  # Optional display name for persistence/recovery
     func_name = Column(String, nullable=False, index=True)
     func_module = Column(String, nullable=False)
     next_run = Column(Float, nullable=False, index=True)
@@ -73,6 +75,7 @@ class SchedulerJob(Base):
         """Convert to dictionary for Job reconstruction."""
         result = {
             "job_id": self.job_id,
+            "job_name": self.job_name or "",
             "func_name": self.func_name,
             "func_module": self.func_module,
             "next_run": self.next_run,
@@ -140,6 +143,7 @@ class SchedulerJob(Base):
 
         return cls(
             job_id=data["job_id"],
+            job_name=data.get("job_name") or "",
             func_name=data["func_name"],
             func_module=data["func_module"],
             next_run=data["next_run"],
@@ -172,6 +176,7 @@ class SchedulerHistory(Base):
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     job_id = Column(String, nullable=False, index=True)
+    job_name = Column(String, nullable=True)  # Optional display name
     func_name = Column(String, nullable=False, index=True)
     status = Column(String, nullable=False, index=True)
     timestamp = Column(Float, nullable=False, index=True)
@@ -189,6 +194,7 @@ class SchedulerHistory(Base):
         """Convert to dictionary."""
         return {
             "job_id": self.job_id,
+            "job_name": getattr(self, "job_name", None),
             "func_name": self.func_name,
             "status": self.status,
             "timestamp": self.timestamp,
@@ -206,6 +212,7 @@ class SchedulerHistory(Base):
         """Create from history dictionary."""
         return cls(
             job_id=data["job_id"],
+            job_name=data.get("job_name"),
             func_name=data["func_name"],
             status=data["status"],
             timestamp=data["timestamp"],
@@ -223,6 +230,7 @@ class SchedulerDeadLetter(Base):
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     job_id = Column(String, nullable=False, index=True)
+    job_name = Column(String, nullable=True)  # Optional display name
     func_name = Column(String, nullable=False, index=True)
     status = Column(String, nullable=False)
     timestamp = Column(Float, nullable=False, index=True)
@@ -235,6 +243,7 @@ class SchedulerDeadLetter(Base):
         """Convert to dictionary."""
         return {
             "job_id": self.job_id,
+            "job_name": getattr(self, "job_name", None),
             "func_name": self.func_name,
             "status": self.status,
             "timestamp": self.timestamp,
@@ -252,6 +261,7 @@ class SchedulerDeadLetter(Base):
         """Create from dead letter dictionary."""
         return cls(
             job_id=data["job_id"],
+            job_name=data.get("job_name"),
             func_name=data["func_name"],
             status=data["status"],
             timestamp=data["timestamp"],
@@ -326,6 +336,14 @@ class SQLAlchemyStorageBackend(StorageBackend):
 
         # Create tables if they don't exist
         Base.metadata.create_all(self.engine)
+        # Ensure table schema: add any missing columns (backward-compat migration)
+        ensure_schema(
+            self.engine,
+            SCHEMA_SQLALCHEMY,
+            self.engine.dialect.name,
+            quiet=self.quiet,
+            log=logger,
+        )
 
         if not quiet:
             logger.info(f"SQLAlchemy storage initialized: {self._safe_url()}")

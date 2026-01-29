@@ -16,6 +16,7 @@ except ImportError as e:
 
 from .base import StorageBackend
 from .models import DeadLetterModel, JobHistoryModel, JobModel, SchedulerMetadataModel
+from .schema_migration import ensure_schema, SCHEMA_SQLMODEL
 
 logger = logging.getLogger("fastscheduler")
 
@@ -70,6 +71,14 @@ class SQLModelStorageBackend(StorageBackend):
 
         # Create tables if they don't exist
         SQLModel.metadata.create_all(self.engine)
+        # Ensure table schema: add any missing columns (backward-compat migration)
+        ensure_schema(
+            self.engine,
+            SCHEMA_SQLMODEL,
+            self.engine.dialect.name,
+            quiet=self.quiet,
+            log=logger,
+        )
 
         if not quiet:
             logger.info(f"SQLModel storage initialized: {self._safe_url()}")

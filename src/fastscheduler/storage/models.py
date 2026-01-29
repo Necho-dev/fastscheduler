@@ -18,6 +18,7 @@ class JobModel(SQLModel, table=True):
     
     id: Optional[int] = Field(default=None, primary_key=True)
     job_id: str = Field(unique=True, index=True)
+    job_name: Optional[str] = ""  # Optional display name for persistence/recovery
     func_name: str
     func_module: str
     next_run: float = Field(index=True)
@@ -43,6 +44,7 @@ class JobModel(SQLModel, table=True):
         import json
         return {
             "job_id": self.job_id,
+            "job_name": getattr(self, "job_name", "") or "",
             "func_name": self.func_name,
             "func_module": self.func_module,
             "next_run": self.next_run,
@@ -74,6 +76,7 @@ class JobModel(SQLModel, table=True):
         
         return cls(
             job_id=data["job_id"],
+            job_name=data.get("job_name") or "",
             func_name=data["func_name"],
             func_module=data["func_module"],
             next_run=data["next_run"],
@@ -103,6 +106,7 @@ class JobHistoryModel(SQLModel, table=True):
     
     id: Optional[int] = Field(default=None, primary_key=True)
     job_id: str = Field(index=True)
+    job_name: Optional[str] = None  # Optional display name
     func_name: str = Field(index=True)
     status: str
     timestamp: float = Field(index=True)
@@ -116,6 +120,7 @@ class JobHistoryModel(SQLModel, table=True):
         from datetime import datetime
         return {
             "job_id": self.job_id,
+            "job_name": getattr(self, "job_name", None),
             "func_name": self.func_name,
             "status": self.status,
             "timestamp": self.timestamp,
@@ -133,6 +138,7 @@ class JobHistoryModel(SQLModel, table=True):
         """Create from history dictionary."""
         return cls(
             job_id=data["job_id"],
+            job_name=data.get("job_name"),
             func_name=data["func_name"],
             status=data["status"],
             timestamp=data["timestamp"],
@@ -150,6 +156,7 @@ class DeadLetterModel(SQLModel, table=True):
     
     id: Optional[int] = Field(default=None, primary_key=True)
     job_id: str = Field(index=True)
+    job_name: Optional[str] = None  # Optional display name
     func_name: str = Field(index=True)
     status: str
     timestamp: float = Field(index=True)
@@ -163,6 +170,7 @@ class DeadLetterModel(SQLModel, table=True):
         from datetime import datetime
         return {
             "job_id": self.job_id,
+            "job_name": getattr(self, "job_name", None),
             "func_name": self.func_name,
             "status": self.status,
             "timestamp": self.timestamp,
@@ -180,6 +188,7 @@ class DeadLetterModel(SQLModel, table=True):
         """Create from dead letter dictionary."""
         return cls(
             job_id=data["job_id"],
+            job_name=data.get("job_name"),
             func_name=data["func_name"],
             status=data["status"],
             timestamp=data["timestamp"],
